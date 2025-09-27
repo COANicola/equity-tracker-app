@@ -1,0 +1,6 @@
+# Ignora il database locale di SQLite
+equity_app.db
+
+# Ignora le cartelle di cache di Python
+__pycache__/
+*.pyc

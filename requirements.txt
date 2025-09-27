@@ -1,0 +1,9 @@
+streamlit
+sqlalchemy
+pandas
+yfinance
+passlib
+plotly
+pyjwt
+bcrypt==3.2.0
+psycopg2-binary
