@@ -608,16 +608,18 @@ if not st.session_state.jwt:
     # Custom login page with COA branding
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Try to display logo on login screen
+        # Try to display logo on login screen - centered
         try:
-            st.image("COA_no sfondo_no scritta.png", width=120)
+            col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
+            with col_logo2:
+                st.image("COA_no sfondo_no scritta.png", width=120)
         except Exception as e:
             logger.info(f"Login logo display failed: {e}")
-            # Fallback to text logo
+            # Fallback to text logo - centered
             st.markdown(f"""
             <div style="text-align: center; padding: 2rem; background: transparent; border-radius: 15px;">
                 <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']}); 
-                            color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem;">
+                            color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem; display: inline-block;">
                     <h1 style="margin: 0; font-size: 3rem; font-weight: 700;">COA</h1>
                     <p style="margin: 0.5rem 0 0 0; font-size: 1.2rem; opacity: 0.9;">Equity Tracker</p>
                 </div>
@@ -719,102 +721,103 @@ with get_db_session() as db:
     strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
     strategies_df = pd.read_sql(db.query(Strategy).statement, db.bind)
 
-# ---------- Strategy Management (Admin Only) ----------
+# ---------- Protocol Management (Admin Only) ----------
 if current_role == 'admin':
-    with st.expander('🎯 Strategy Management'):
+    with st.expander('🎯 Protocol Management'):
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader('➕ Add New Strategy')
-            with st.form("add_strategy_form"):
-                strategy_name = st.text_input('Strategy Name', placeholder='e.g., Growth Strategy')
-                strategy_desc = st.text_area('Description', placeholder='Describe the strategy...')
+            st.subheader('➕ Add New Protocol')
+            with st.form("add_protocol_form"):
+                protocol_name = st.text_input('Protocol Name', placeholder='e.g., Growth Protocol')
+                protocol_desc = st.text_area('Description', placeholder='Describe the protocol...')
                 
-                if st.form_submit_button('Add Strategy', use_container_width=True):
-                    if strategy_name:
+                if st.form_submit_button('Add Protocol', use_container_width=True):
+                    if protocol_name:
                         with get_db_session() as db:
-                            existing = db.query(Strategy).filter(Strategy.name == strategy_name).first()
+                            existing = db.query(Strategy).filter(Strategy.name == protocol_name).first()
                             if existing:
-                                st.error('Strategy name already exists')
+                                st.error('Protocol name already exists')
                             else:
-                                new_strategy = Strategy(name=strategy_name, description=strategy_desc)
-                                db.add(new_strategy)
-                                st.success(f'Strategy "{strategy_name}" added successfully!')
+                                new_protocol = Strategy(name=protocol_name, description=protocol_desc)
+                                db.add(new_protocol)
+                                db.commit()  # Commit the transaction
+                                st.success(f'Protocol "{protocol_name}" added successfully!')
                                 time.sleep(1)
                                 st.rerun()
                     else:
-                        st.error('Strategy name is required')
+                        st.error('Protocol name is required')
         
         with col2:
-            st.subheader('📋 Active Strategies')
-            # Reload strategies within session context to avoid DetachedInstanceError
+            st.subheader('📋 Active Protocols')
+            # Reload protocols within session context to avoid DetachedInstanceError
             with get_db_session() as db:
-                active_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-                if active_strategies:
-                    for strategy in active_strategies:
+                active_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
+                if active_protocols:
+                    for protocol in active_protocols:
                         with st.container():
                             col_a, col_b, col_c = st.columns([3, 1, 1])
                             with col_a:
-                                st.markdown(f"**{strategy.name}**")
-                                if strategy.description:
-                                    st.caption(strategy.description)
+                                st.markdown(f"**{protocol.name}**")
+                                if protocol.description:
+                                    st.caption(protocol.description)
                             with col_b:
-                                if st.button('✏️', key=f'rename_strategy_{strategy.id}', help='Rename Strategy'):
-                                    st.session_state[f'renaming_strategy_{strategy.id}'] = True
-                                    st.session_state[f'rename_name_{strategy.id}'] = strategy.name
-                                    st.session_state[f'rename_desc_{strategy.id}'] = strategy.description or ''
+                                if st.button('✏️', key=f'rename_protocol_{protocol.id}', help='Rename Protocol'):
+                                    st.session_state[f'renaming_protocol_{protocol.id}'] = True
+                                    st.session_state[f'rename_name_{protocol.id}'] = protocol.name
+                                    st.session_state[f'rename_desc_{protocol.id}'] = protocol.description or ''
                             with col_c:
-                                if st.button('🗑️', key=f'del_strategy_{strategy.id}', help='Delete Strategy'):
-                                    strategy_obj = db.get(Strategy, strategy.id)
-                                    strategy_obj.is_active = False
+                                if st.button('🗑️', key=f'del_protocol_{protocol.id}', help='Delete Protocol'):
+                                    protocol_obj = db.get(Strategy, protocol.id)
+                                    protocol_obj.is_active = False
                                     db.commit()
-                                    st.success('Strategy deactivated')
+                                    st.success('Protocol deactivated')
                                     time.sleep(1)
                                     st.rerun()
                             
                             # Rename form (shown when rename button is clicked)
-                            if st.session_state.get(f'renaming_strategy_{strategy.id}', False):
-                                with st.form(f'rename_form_{strategy.id}'):
+                            if st.session_state.get(f'renaming_protocol_{protocol.id}', False):
+                                with st.form(f'rename_form_{protocol.id}'):
                                     new_name = st.text_input('New Name', 
-                                                             value=st.session_state[f'rename_name_{strategy.id}'],
-                                                             key=f'rename_name_input_{strategy.id}')
+                                                             value=st.session_state[f'rename_name_{protocol.id}'],
+                                                             key=f'rename_name_input_{protocol.id}')
                                     new_desc = st.text_area('New Description (optional)', 
-                                                            value=st.session_state[f'rename_desc_{strategy.id}'],
-                                                            key=f'rename_desc_input_{strategy.id}')
+                                                            value=st.session_state[f'rename_desc_{protocol.id}'],
+                                                            key=f'rename_desc_input_{protocol.id}')
                                     
                                     col_rename1, col_rename2 = st.columns(2)
                                     with col_rename1:
                                         if st.form_submit_button('💾 Save', use_container_width=True):
-                                            if new_name and new_name != strategy.name:
+                                            if new_name and new_name != protocol.name:
                                                 # Check if name already exists
                                                 existing = db.query(Strategy).filter(Strategy.name == new_name).first()
                                                 if existing:
-                                                    st.error('Strategy name already exists')
+                                                    st.error('Protocol name already exists')
                                                 else:
-                                                    strategy_obj = db.get(Strategy, strategy.id)
-                                                    strategy_obj.name = new_name
-                                                    strategy_obj.description = new_desc
+                                                    protocol_obj = db.get(Strategy, protocol.id)
+                                                    protocol_obj.name = new_name
+                                                    protocol_obj.description = new_desc
                                                     db.commit()
-                                                    st.success(f'Strategy renamed to "{new_name}"')
+                                                    st.success(f'Protocol renamed to "{new_name}"')
                                                     # Clear rename state
-                                                    st.session_state[f'renaming_strategy_{strategy.id}'] = False
+                                                    st.session_state[f'renaming_protocol_{protocol.id}'] = False
                                                     time.sleep(1)
                                                     st.rerun()
-                                            elif new_name == strategy.name:
+                                            elif new_name == protocol.name:
                                                 # Only update description if name is the same
-                                                strategy_obj = db.get(Strategy, strategy.id)
-                                                strategy_obj.description = new_desc
+                                                protocol_obj = db.get(Strategy, protocol.id)
+                                                protocol_obj.description = new_desc
                                                 db.commit()
-                                                st.success('Strategy description updated')
-                                                st.session_state[f'renaming_strategy_{strategy.id}'] = False
+                                                st.success('Protocol description updated')
+                                                st.session_state[f'renaming_protocol_{protocol.id}'] = False
                                                 time.sleep(1)
                                                 st.rerun()
                                     with col_rename2:
                                         if st.form_submit_button('❌ Cancel', use_container_width=True):
-                                            st.session_state[f'renaming_strategy_{strategy.id}'] = False
+                                            st.session_state[f'renaming_protocol_{protocol.id}'] = False
                                             st.rerun()
                 else:
-                    st.info('No strategies defined yet')
+                    st.info('No protocols defined yet')
 
 # ---------- CSV Export/Import (Admin Only) ----------
 if current_role == 'admin':
@@ -860,11 +863,11 @@ if all_events_df.empty:
                 investor = st.text_input('Investor Name', placeholder='Enter investor name')
                 
             with col2:
-                # Strategy selection - reload within session to avoid DetachedInstanceError
+                # Protocol selection - reload within session to avoid DetachedInstanceError
                 with get_db_session() as db:
-                    current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-                    strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
-                    selected_strategy = st.selectbox('Strategy', strategy_options)
+                    current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
+                    protocol_options = ['No Protocol'] + [s.name for s in current_protocols]
+                    selected_protocol = st.selectbox('Protocol', protocol_options)
                 
             eur_amount = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, value=1000.0)
             
@@ -874,9 +877,9 @@ if all_events_df.empty:
                 
                 with get_db_session() as db:
                     strategy_id = None
-                    if selected_strategy != 'No Strategy':
-                        strategy = db.query(Strategy).filter(Strategy.name == selected_strategy).first()
-                        strategy_id = strategy.id if strategy else None
+                    if selected_protocol != 'No Protocol':
+                        protocol = db.query(Strategy).filter(Strategy.name == selected_protocol).first()
+                        strategy_id = protocol.id if protocol else None
                     
                     db.add(Event(
                         date=d_date, 
@@ -998,20 +1001,8 @@ else:
 
     st.divider()
 
-    # ---------- Strategy Selector ----------
-    # Reload strategies within session to avoid DetachedInstanceError
-    with get_db_session() as db:
-        current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-        if current_strategies:
-            strategy_names = ['All Strategies'] + [s.name for s in current_strategies]
-            selected_strategy_name = st.selectbox('🎯 View Strategy:', strategy_names, key='strategy_selector')
-            selected_strategy_id = None
-            if selected_strategy_name != 'All Strategies':
-                selected_strategy = next((s for s in current_strategies if s.name == selected_strategy_name), None)
-                selected_strategy_id = selected_strategy.id if selected_strategy else None
-
     # ---------- Navigation Tabs ----------
-    tab_list = ["📈 Dashboard", "📊 Strategy Performance", "👥 Investor Details"]
+    tab_list = ["📈 Dashboard", "📊 Protocol Performance", "👥 Investor Details"]
     if current_role == 'admin':
         tab_list.extend(["📅 Annual Reports", "⚙️ Event Management"])
     
@@ -1069,21 +1060,21 @@ else:
                 fig_strategies.update_layout(height=400)
                 st.plotly_chart(fig_strategies, use_container_width=True)
 
-    # Strategy Performance Tab
+    # Protocol Performance Tab
     with tabs[1]:
-        st.markdown("### 📊 Multi-Strategy Performance")
+        st.markdown("### 📊 Multi-Protocol Performance")
         
         if strategies and strategy_data:
-            # Show individual strategy charts
+            # Show individual protocol charts
             cols = st.columns(2)
-            for i, (strategy_name, data) in enumerate(strategy_data.items()):
+            for i, (protocol_name, data) in enumerate(strategy_data.items()):
                 with cols[i % 2]:
                     if not data['history'].empty:
                         fig = px.line(
                             data['history'], 
                             x='date', 
                             y='total',
-                            title=f'{strategy_name} Performance',
+                            title=f'{protocol_name} Performance',
                             labels={'date': 'Date', 'total': 'Value (USD)'}
                         )
                         fig.update_traces(
@@ -1093,19 +1084,19 @@ else:
                         fig.update_layout(height=300)
                         st.plotly_chart(fig, use_container_width=True)
                     else:
-                        st.info(f"No data for {strategy_name}")
+                        st.info(f"No data for {protocol_name}")
             
-            # Combined strategy comparison
+            # Combined protocol comparison
             if len(strategy_data) > 1:
-                st.markdown("### 📈 Strategy Comparison")
+                st.markdown("### 📈 Protocol Comparison")
                 
-                # Combine all strategy histories
+                # Combine all protocol histories
                 comparison_data = []
-                for strategy_name, data in strategy_data.items():
+                for protocol_name, data in strategy_data.items():
                     if not data['history'].empty:
                         temp_df = data['history'].copy()
-                        temp_df['Strategy'] = strategy_name
-                        comparison_data.append(temp_df[['date', 'total', 'Strategy']])
+                        temp_df['Protocol'] = protocol_name
+                        comparison_data.append(temp_df[['date', 'total', 'Protocol']])
                 
                 if comparison_data:
                     combined_df = pd.concat(comparison_data, ignore_index=True)
@@ -1113,14 +1104,14 @@ else:
                         combined_df,
                         x='date',
                         y='total',
-                        color='Strategy',
-                        title='Strategy Performance Comparison',
+                        color='Protocol',
+                        title='Protocol Performance Comparison',
                         labels={'date': 'Date', 'total': 'Value (USD)'}
                     )
                     fig_comparison.update_layout(height=400)
                     st.plotly_chart(fig_comparison, use_container_width=True)
         else:
-            st.info("Define strategies to see multi-strategy performance")
+            st.info("Define protocols to see multi-protocol performance")
 
     # Investor Details Tab
     with tabs[2]:
@@ -1368,11 +1359,11 @@ else:
                         d_date = st.date_input('Date', datetime.date.today(), key='d_date')
                         d_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='d_inv')
                         
-                        # Reload strategies within session to avoid DetachedInstanceError
+                        # Reload protocols within session to avoid DetachedInstanceError
                         with get_db_session() as db:
-                            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-                            strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
-                            d_strategy = st.selectbox('Strategy', strategy_options, key='d_strategy')
+                            current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
+                            protocol_options = ['No Protocol'] + [s.name for s in current_protocols]
+                            d_protocol = st.selectbox('Protocol', protocol_options, key='d_protocol')
                         
                         d_eur = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, key='d_eur')
                         
@@ -1382,9 +1373,9 @@ else:
                             
                             with get_db_session() as db:
                                 strategy_id = None
-                                if d_strategy != 'No Strategy':
-                                    strategy = db.query(Strategy).filter(Strategy.name == d_strategy).first()
-                                    strategy_id = strategy.id if strategy else None
+                                if d_protocol != 'No Protocol':
+                                    protocol = db.query(Strategy).filter(Strategy.name == d_protocol).first()
+                                    strategy_id = protocol.id if protocol else None
                                 
                                 db.add(Event(
                                     date=d_date, 
@@ -1407,9 +1398,9 @@ else:
                         
                         # Reload strategies within session to avoid DetachedInstanceError
                         with get_db_session() as db:
-                            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-                            strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
-                            w_strategy = st.selectbox('Strategy', strategy_options, key='w_strategy')
+                            current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
+                            protocol_options = ['No Protocol'] + [s.name for s in current_protocols]
+                            w_protocol = st.selectbox('Protocol', protocol_options, key='w_protocol')
                         
                         w_usd = st.number_input('Amount (USD)', min_value=0.01, step=100.0, key='w_usd')
                         
@@ -1419,9 +1410,9 @@ else:
                             
                             with get_db_session() as db:
                                 strategy_id = None
-                                if w_strategy != 'No Strategy':
-                                    strategy = db.query(Strategy).filter(Strategy.name == w_strategy).first()
-                                    strategy_id = strategy.id if strategy else None
+                                if w_protocol != 'No Protocol':
+                                    protocol = db.query(Strategy).filter(Strategy.name == w_protocol).first()
+                                    strategy_id = protocol.id if protocol else None
                                 
                                 db.add(Event(
                                     date=w_date, 
@@ -1441,20 +1432,20 @@ else:
                     with st.form("valuation_form"):
                         v_date = st.date_input('Date', datetime.date.today(), key='v_date')
                         
-                        # Reload strategies within session to avoid DetachedInstanceError
+                        # Reload protocols within session to avoid DetachedInstanceError
                         with get_db_session() as db:
-                            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-                            strategy_options = ['All Strategies'] + [s.name for s in current_strategies]
-                            v_strategy = st.selectbox('Strategy', strategy_options, key='v_strategy')
+                            current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
+                            protocol_options = ['All Protocols'] + [s.name for s in current_protocols]
+                            v_protocol = st.selectbox('Protocol', protocol_options, key='v_protocol')
                         
                         v_total = st.number_input('Total Portfolio Value (USD)', min_value=0.01, step=1000.0, key='v_usd')
                         
                         if st.form_submit_button('📈 Add Valuation', use_container_width=True):
                             with get_db_session() as db:
                                 strategy_id = None
-                                if v_strategy != 'All Strategies':
-                                    strategy = db.query(Strategy).filter(Strategy.name == v_strategy).first()
-                                    strategy_id = strategy.id if strategy else None
+                                if v_protocol != 'All Protocols':
+                                    protocol = db.query(Strategy).filter(Strategy.name == v_protocol).first()
+                                    strategy_id = protocol.id if protocol else None
                                 
                                 db.add(Event(
                                     date=v_date, 
@@ -1476,10 +1467,10 @@ else:
                     if not events_to_edit.empty:
                         # Add strategy names
                         strategy_mapping = strategies_df[['id', 'name']].set_index('id')['name'].to_dict()
-                        events_to_edit['strategy_name'] = events_to_edit['strategy_id'].map(strategy_mapping).fillna('No Strategy')
+                        events_to_edit['protocol_name'] = events_to_edit['strategy_id'].map(strategy_mapping).fillna('No Protocol')
                         
                         st.dataframe(
-                            events_to_edit[['id', 'date', 'type', 'strategy_name', 'investor', 'eur_amount', 'usd_amount', 'valuation_total_usd']].sort_values('date', ascending=False), 
+                            events_to_edit[['id', 'date', 'type', 'protocol_name', 'investor', 'eur_amount', 'usd_amount', 'valuation_total_usd']].sort_values('date', ascending=False), 
                             height=300, 
                             use_container_width=True, 
                             hide_index=True
@@ -1490,9 +1481,9 @@ else:
                         if ev_id_to_edit:
                             ev_row = db.get(Event, ev_id_to_edit)
                             if ev_row:
-                                # Load strategies within the same session to avoid DetachedInstanceError
-                                current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-                                strategy_mapping = {s.name: s for s in current_strategies}
+                                # Load protocols within the same session to avoid DetachedInstanceError
+                                current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
+                                protocol_mapping = {s.name: s for s in current_protocols}
                                 
                                 with st.form(f"edit_form_{ev_row.id}"):
                                     st.markdown(f"**Edit Event #{ev_row.id} ({ev_row.type})**")
@@ -1502,14 +1493,14 @@ else:
                                     if ev_row.type in ['deposit', 'withdrawal']:
                                         e_investor = st.text_input('Investor Name', value=ev_row.investor or "")
                                         
-                                        current_strategy = 'No Strategy'
+                                        current_protocol = 'No Protocol'
                                         if ev_row.strategy_id:
-                                            strategy = db.query(Strategy).filter(Strategy.id == ev_row.strategy_id).first()
-                                            current_strategy = strategy.name if strategy else 'No Strategy'
+                                            protocol = db.query(Strategy).filter(Strategy.id == ev_row.strategy_id).first()
+                                            current_protocol = protocol.name if protocol else 'No Protocol'
                                         
-                                        strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
-                                        e_strategy = st.selectbox('Strategy', strategy_options, 
-                                                                index=strategy_options.index(current_strategy))
+                                        protocol_options = ['No Protocol'] + [s.name for s in current_protocols]
+                                        e_protocol = st.selectbox('Protocol', protocol_options, 
+                                                                index=protocol_options.index(current_protocol))
                                     
                                     if ev_row.type == 'deposit':
                                         e_eur = st.number_input('Amount (EUR)', value=ev_row.eur_amount or 0.0)
@@ -1528,10 +1519,10 @@ else:
                                             if ev_row.type in ['deposit', 'withdrawal']:
                                                 ev_row.investor = e_investor.strip() or None
                                                 
-                                                # Update strategy
-                                                if e_strategy != 'No Strategy':
-                                                    strategy = strategy_mapping.get(e_strategy)
-                                                    ev_row.strategy_id = strategy.id if strategy else None
+                                                # Update protocol
+                                                if e_protocol != 'No Protocol':
+                                                    protocol = protocol_mapping.get(e_protocol)
+                                                    ev_row.strategy_id = protocol.id if protocol else None
                                                 else:
                                                     ev_row.strategy_id = None
                                             
@@ -1587,6 +1578,7 @@ if current_role == 'admin':
                                         role=new_role, 
                                         investor_name=new_investor_name.strip() or None
                                     ))
+                                    db.commit()  # Commit the transaction
                                     st.success(f'User "{new_username}" created successfully!')
                                     time.sleep(1)
                                     st.rerun()
