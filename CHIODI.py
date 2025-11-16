@@ -184,6 +184,13 @@ def apply_coa_styling():
         background-color: var(--background);
     }}
     
+    /* Center all images */
+    .stImage img {{
+        display: block;
+        margin-left: auto;
+        margin-right: auto;
+    }}
+    
     /* Header styling */
     .main-header {{
         background: linear-gradient(135deg, var(--primary-purple), var(--primary-blue));
@@ -611,10 +618,10 @@ if not st.session_state.jwt:
         img_c1, img_c2, img_c3 = st.columns([1, 2, 1])
         with img_c2:
             try:
-                st.image("COA_no sfondo_no scritta.png", width=80)
+                st.image("COA_no sfondo_no scritta.png", width=100)
             except Exception as e:
                 logger.info(f"Logo display failed: {e}")
-        st.markdown("<h2 style='text-align: center; margin-bottom: 1.5rem;'>COA-Portfolio</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; margin-top: 0.5rem; margin-bottom: 1.5rem;'>COA-Portfolio</h2>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             login_user = st.text_input('Username', placeholder='Enter your username')
@@ -659,7 +666,7 @@ with col1:
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
         try:
             # Try to display logo if it exists - use the actual filename
-            st.image("COA_no sfondo_no scritta.png", width=110)
+            st.image("COA_no sfondo_no scritta.png", width=160)
         except Exception as e:
             logger.info(f"Logo display failed: {e}")
             # Fallback to text logo
@@ -884,12 +891,12 @@ else:
             # Main portfolio chart
             if not total_history.empty:
                 fig_portfolio = px.line(
-                    total_history, 
-                    x='date', 
-                    y='total', 
+                    total_history,
+                    x='date',
+                    y='total',
                     title='Total Portfolio Value Over Time',
                     labels={'date': 'Date', 'total': 'Portfolio Value (USD)'},
-                    line_shape='linear',
+                    markers=True,
                     render_mode='svg'
                 )
                 fig_portfolio.update_traces(
@@ -904,7 +911,10 @@ else:
                     font=dict(color=COA_COLORS['text_primary']),
                     title_font_size=16,
                     title_font_color=COA_COLORS['primary_purple'],
-                    height=400
+                    height=400,
+                    hovermode='x unified',
+                    xaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False),
+                    yaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False, tickformat=',.0f')
                 )
                 st.plotly_chart(fig_portfolio, use_container_width=True)
             else:
