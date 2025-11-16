@@ -1428,14 +1428,8 @@ else:
                     
                     if not events_to_edit.empty:
                         # Add strategy names
-                        events_to_edit = events_to_edit.merge(
-                            strategies_df[['id', 'name']], 
-                            left_on='strategy_id', 
-                            right_on='id', 
-                            how='left', 
-                            suffixes=('', '_strategy')
-                        )
-                        events_to_edit['strategy_name'] = events_to_edit['name_strategy'].fillna('No Strategy')
+                        strategy_mapping = strategies_df[['id', 'name']].set_index('id')['name'].to_dict()
+                        events_to_edit['strategy_name'] = events_to_edit['strategy_id'].map(strategy_mapping).fillna('No Strategy')
                         
                         st.dataframe(
                             events_to_edit[['id', 'date', 'type', 'strategy_name', 'investor', 'eur_amount', 'usd_amount', 'valuation_total_usd']].sort_values('date', ascending=False), 
