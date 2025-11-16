@@ -610,7 +610,7 @@ if not st.session_state.jwt:
     with col2:
         # Try to display logo on login screen
         try:
-            st.image("COA_no sfondo_no scritta.png", width=200, use_column_width=True)
+            st.image("COA_no sfondo_no scritta.png", width=120)
         except Exception as e:
             logger.info(f"Login logo display failed: {e}")
             # Fallback to text logo
@@ -753,19 +753,66 @@ if current_role == 'admin':
                 if active_strategies:
                     for strategy in active_strategies:
                         with st.container():
-                            col_a, col_b = st.columns([3, 1])
+                            col_a, col_b, col_c = st.columns([3, 1, 1])
                             with col_a:
                                 st.markdown(f"**{strategy.name}**")
                                 if strategy.description:
                                     st.caption(strategy.description)
                             with col_b:
-                                if st.button('🗑️', key=f'del_strategy_{strategy.id}'):
+                                if st.button('✏️', key=f'rename_strategy_{strategy.id}', help='Rename Strategy'):
+                                    st.session_state[f'renaming_strategy_{strategy.id}'] = True
+                                    st.session_state[f'rename_name_{strategy.id}'] = strategy.name
+                                    st.session_state[f'rename_desc_{strategy.id}'] = strategy.description or ''
+                            with col_c:
+                                if st.button('🗑️', key=f'del_strategy_{strategy.id}', help='Delete Strategy'):
                                     strategy_obj = db.get(Strategy, strategy.id)
                                     strategy_obj.is_active = False
                                     db.commit()
                                     st.success('Strategy deactivated')
                                     time.sleep(1)
                                     st.rerun()
+                            
+                            # Rename form (shown when rename button is clicked)
+                            if st.session_state.get(f'renaming_strategy_{strategy.id}', False):
+                                with st.form(f'rename_form_{strategy.id}'):
+                                    new_name = st.text_input('New Name', 
+                                                             value=st.session_state[f'rename_name_{strategy.id}'],
+                                                             key=f'rename_name_input_{strategy.id}')
+                                    new_desc = st.text_area('New Description (optional)', 
+                                                            value=st.session_state[f'rename_desc_{strategy.id}'],
+                                                            key=f'rename_desc_input_{strategy.id}')
+                                    
+                                    col_rename1, col_rename2 = st.columns(2)
+                                    with col_rename1:
+                                        if st.form_submit_button('💾 Save', use_container_width=True):
+                                            if new_name and new_name != strategy.name:
+                                                # Check if name already exists
+                                                existing = db.query(Strategy).filter(Strategy.name == new_name).first()
+                                                if existing:
+                                                    st.error('Strategy name already exists')
+                                                else:
+                                                    strategy_obj = db.get(Strategy, strategy.id)
+                                                    strategy_obj.name = new_name
+                                                    strategy_obj.description = new_desc
+                                                    db.commit()
+                                                    st.success(f'Strategy renamed to "{new_name}"')
+                                                    # Clear rename state
+                                                    st.session_state[f'renaming_strategy_{strategy.id}'] = False
+                                                    time.sleep(1)
+                                                    st.rerun()
+                                            elif new_name == strategy.name:
+                                                # Only update description if name is the same
+                                                strategy_obj = db.get(Strategy, strategy.id)
+                                                strategy_obj.description = new_desc
+                                                db.commit()
+                                                st.success('Strategy description updated')
+                                                st.session_state[f'renaming_strategy_{strategy.id}'] = False
+                                                time.sleep(1)
+                                                st.rerun()
+                                    with col_rename2:
+                                        if st.form_submit_button('❌ Cancel', use_container_width=True):
+                                            st.session_state[f'renaming_strategy_{strategy.id}'] = False
+                                            st.rerun()
                 else:
                     st.info('No strategies defined yet')
 
@@ -1443,6 +1490,10 @@ else:
                         if ev_id_to_edit:
                             ev_row = db.get(Event, ev_id_to_edit)
                             if ev_row:
+                                # Load strategies within the same session to avoid DetachedInstanceError
+                                current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+                                strategy_mapping = {s.name: s for s in current_strategies}
+                                
                                 with st.form(f"edit_form_{ev_row.id}"):
                                     st.markdown(f"**Edit Event #{ev_row.id} ({ev_row.type})**")
                                     
@@ -1456,12 +1507,9 @@ else:
                                             strategy = db.query(Strategy).filter(Strategy.id == ev_row.strategy_id).first()
                                             current_strategy = strategy.name if strategy else 'No Strategy'
                                         
-                                        # Reload strategies within session to avoid DetachedInstanceError
-                                        with get_db_session() as db:
-                                            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-                                            strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
-                                            e_strategy = st.selectbox('Strategy', strategy_options, 
-                                                                    index=strategy_options.index(current_strategy))
+                                        strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
+                                        e_strategy = st.selectbox('Strategy', strategy_options, 
+                                                                index=strategy_options.index(current_strategy))
                                     
                                     if ev_row.type == 'deposit':
                                         e_eur = st.number_input('Amount (EUR)', value=ev_row.eur_amount or 0.0)
@@ -1482,7 +1530,7 @@ else:
                                                 
                                                 # Update strategy
                                                 if e_strategy != 'No Strategy':
-                                                    strategy = db.query(Strategy).filter(Strategy.name == e_strategy).first()
+                                                    strategy = strategy_mapping.get(e_strategy)
                                                     ev_row.strategy_id = strategy.id if strategy else None
                                                 else:
                                                     ev_row.strategy_id = None
