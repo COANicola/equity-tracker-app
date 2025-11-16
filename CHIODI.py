@@ -937,17 +937,17 @@ else:
                 active_strategies = len([s for s in current_strategies if s.is_active])
                 st.markdown(f"""
                 <div class="metric-card">
-                <div class="metric-label">Active Strategies</div>
-                <div class="metric-value">{active_strategies}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Strategies</div>
-                <div class="metric-value">None</div>
-            </div>
-            """, unsafe_allow_html=True)
+                    <div class="metric-label">Active Strategies</div>
+                    <div class="metric-value">{active_strategies}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">Strategies</div>
+                    <div class="metric-value">None</div>
+                </div>
+                """, unsafe_allow_html=True)
 
     st.divider()
 
