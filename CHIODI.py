@@ -1,43 +1,243 @@
 """
-Enhanced Streamlit Equity Tracker - FINAL VERSION 2.8 (First Run Fix)
-
-This version provides a crucial fix for the initial state of the deployed app,
-allowing the admin to add the first event when the database is empty.
-
-Key Fixes:
-- Removed the hard `st.stop()` when the event log is empty.
-- Now, if the event log is empty, a simplified form is shown to the admin to add the first event.
-- Standard (non-admin) users will still see a "no events" message and be stopped.
-- All previous features and fixes are maintained.
+COA Equity Tracker - Versione 3.0
+Enhanced version with multi-strategy support, annual reports, and improved styling
 """
 
 import streamlit as st
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, Text, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 import pandas as pd
 import yfinance as yf
 from passlib.context import CryptContext
 import datetime
 import plotly.express as px
+import plotly.graph_objects as go
 import jwt
-from jwt import PyJWTError
+from jwt.exceptions import PyJWTError
 import time
 from contextlib import contextmanager
 import logging
+import io
 
-# ... (Tutto il codice di setup, utility e replay_events rimane identico) ...
 # ---------- Logging setup ----------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ---------- Configuration ----------
-JWT_SECRET = st.secrets.get('jwt_secret', 'dev-secret-change-me-in-production')
+# Try to get secrets from Streamlit secrets, fallback to environment variables or defaults
+try:
+    JWT_SECRET = st.secrets.get('jwt_secret', 'dev-secret-change-me-in-production')
+    DB_URL = st.secrets.get('db_url', 'sqlite:///equity_app_final.db')
+except Exception:
+    # Fallback for local development
+    import os
+    JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret-change-me-in-production')
+    DB_URL = os.environ.get('DB_URL', 'sqlite:///equity_app_final.db')
+
 JWT_ALGO = 'HS256'
 JWT_EXP_SECONDS = 60 * 60 * 8  # 8 hours
 
-DB_URL = st.secrets.get('db_url', 'sqlite:///equity_app_final.db')
+# COA Brand Colors based on logo
+COA_COLORS = {
+    'primary_purple': '#7A2E8F',
+    'primary_blue': '#1E8CC8', 
+    'light_gray': '#CFCFCF',
+    'dark_purple': '#5C1F6B',
+    'light_purple': '#9B4FB5',
+    'dark_blue': '#166A9B',
+    'light_blue': '#4AA8E0',
+    'background': '#F8F9FA',
+    'card_bg': '#FFFFFF',
+    'text_primary': '#2D3748',
+    'text_secondary': '#718096',
+    'success': '#38A169',
+    'warning': '#D69E2E',
+    'error': '#E53E3E'
+}
 
-# ---------- DB setup with thread-safe session ----------
+# ---------- Custom CSS for COA Branding ----------
+def apply_coa_styling():
+    st.markdown(f"""
+    <style>
+    /* Main theme colors */
+    :root {{
+        --primary-purple: {COA_COLORS['primary_purple']};
+        --primary-blue: {COA_COLORS['primary_blue']};
+        --light-gray: {COA_COLORS['light_gray']};
+        --background: {COA_COLORS['background']};
+        --card-bg: {COA_COLORS['card_bg']};
+        --text-primary: {COA_COLORS['text_primary']};
+        --text-secondary: {COA_COLORS['text_secondary']};
+    }}
+    
+    /* Global styles */
+    .stApp {{
+        background-color: var(--background);
+    }}
+    
+    /* Header styling */
+    .main-header {{
+        background: linear-gradient(135deg, var(--primary-purple), var(--primary-blue));
+        padding: 2rem;
+        border-radius: 15px;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    }}
+    
+    .header-content {{
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }}
+    
+    .logo-container {{
+        background: white;
+        padding: 1rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }}
+    
+    .title-container h1 {{
+        color: white;
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin: 0;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }}
+    
+    .title-container p {{
+        color: rgba(255,255,255,0.9);
+        font-size: 1.1rem;
+        margin: 0.5rem 0 0 0;
+    }}
+    
+    /* Card styling */
+    .metric-card {{
+        background: var(--card-bg);
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border-left: 4px solid var(--primary-purple);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }}
+    
+    .metric-card:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    }}
+    
+    .metric-value {{
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary-purple);
+        margin: 0;
+    }}
+    
+    .metric-label {{
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin: 0 0 0.5rem 0;
+    }}
+    
+    /* Button styling */
+    .stButton > button {{
+        background: linear-gradient(135deg, var(--primary-purple), var(--primary-blue));
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 8px rgba(122, 46, 143, 0.3);
+    }}
+    
+    .stButton > button:hover {{
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(122, 46, 143, 0.4);
+        background: linear-gradient(135deg, var(--dark-purple), var(--dark-blue));
+    }}
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {{
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 0.5rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }}
+    
+    .stTabs [data-baseweb="tab"] {{
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        font-weight: 500;
+        padding: 0.75rem 1.25rem;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }}
+    
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {{
+        background: linear-gradient(135deg, var(--primary-purple), var(--primary-blue));
+        color: white;
+        font-weight: 600;
+    }}
+    
+    /* Form styling */
+    .stForm {{
+        background: var(--card-bg);
+        padding: 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        border: 1px solid rgba(122, 46, 143, 0.1);
+    }}
+    
+    /* DataFrame styling */
+    .dataframe {{
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }}
+    
+    /* Success/Error messages */
+    .stSuccess {{
+        background: rgba(56, 161, 105, 0.1);
+        border: 1px solid rgba(56, 161, 105, 0.3);
+        border-radius: 8px;
+        padding: 1rem;
+    }}
+    
+    .stError {{
+        background: rgba(229, 62, 62, 0.1);
+        border: 1px solid rgba(229, 62, 62, 0.3);
+        border-radius: 8px;
+        padding: 1rem;
+    }}
+    
+    /* Sidebar styling */
+    .css-1d391kg {{  /* Sidebar */
+        background: linear-gradient(180deg, var(--primary-purple), var(--primary-blue));
+    }}
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {{
+        background: var(--card-bg);
+        border-radius: 8px;
+        border: 1px solid rgba(122, 46, 143, 0.2);
+        font-weight: 600;
+        color: var(--primary-purple);
+    }}
+    
+    /* Plotly chart styling */
+    .js-plotly-plot .plotly .svg-container {{
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+# ---------- DB setup with multi-strategy support ----------
 Base = declarative_base()
 
 class User(Base):
@@ -48,11 +248,20 @@ class User(Base):
     role = Column(String, nullable=False, default='user')
     investor_name = Column(String, nullable=True)
 
+class Strategy(Base):
+    __tablename__ = 'strategies'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(Date, default=datetime.date.today)
+
 class Event(Base):
     __tablename__ = 'events'
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
-    type = Column(String, nullable=False)
+    type = Column(String, nullable=False)  # deposit, withdrawal, valuation
+    strategy_id = Column(Integer, nullable=True)  # New field for strategy
     investor = Column(String, nullable=True)
     eur_amount = Column(Float, nullable=True)
     usd_amount = Column(Float, nullable=True)
@@ -66,7 +275,6 @@ else:
     engine = create_engine(DB_URL)
 
 Base.metadata.create_all(engine)
-
 session_factory = sessionmaker(bind=engine)
 Session = scoped_session(session_factory)
 
@@ -105,16 +313,17 @@ def get_historical_eurusd(date: datetime.date, retry_count: int = 3) -> float:
             logger.warning(f"yfinance download attempt {attempt + 1} failed: {e}")
             if attempt < retry_count - 1: time.sleep(1)
     logger.error(f"Could not fetch EUR/USD rate for {date}. Using fallback.")
-    st.warning(f"Could not fetch live exchange rate for {date}. Using an approximate fallback rate.")
     return 1.10
 
 def hash_password(password: str) -> str: return pwd_context.hash(password)
 def verify_password(password: str, password_hash: str) -> bool:
     try: return pwd_context.verify(password, password_hash)
     except Exception: return False
+
 def create_jwt(username: str, role: str) -> str:
     payload = {'sub': username, 'role': role, 'iat': int(time.time()), 'exp': int(time.time()) + JWT_EXP_SECONDS}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
 def decode_jwt(token: str):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
@@ -122,13 +331,22 @@ def decode_jwt(token: str):
         return payload
     except PyJWTError: return None
 
-# ---------- Replay engine & ROI ----------
-def replay_events(events_df: pd.DataFrame):
+# ---------- Enhanced Replay Engine with Strategy Support ----------
+def replay_events(events_df: pd.DataFrame, strategy_id: int = None):
     if events_df.empty: return {}, pd.DataFrame()
+    
+    # Filter by strategy if specified
+    if strategy_id is not None:
+        events_df = events_df[events_df['strategy_id'] == strategy_id]
+    
     events_df = events_df.sort_values('date').reset_index(drop=True)
     investor_balances, history_rows, prev_total_value = {}, [], 0.0
+    
     for _, row in events_df.iterrows():
-        event_type, usd_amount, investor = row.get('type'), float(row.get('usd_amount', 0.0) or 0.0), row.get('investor')
+        event_type = row.get('type')
+        usd_amount = float(row.get('usd_amount', 0.0) or 0.0)
+        investor = row.get('investor')
+        
         if event_type == 'deposit' and investor and usd_amount > 0:
             investor_balances[investor] = investor_balances.get(investor, 0.0) + usd_amount
         elif event_type == 'withdrawal' and investor and usd_amount > 0:
@@ -144,290 +362,1127 @@ def replay_events(events_df: pd.DataFrame):
                 snapshot = {'date': row['date'], 'total': prev_total_value, **investor_balances}
                 history_rows.append(snapshot)
                 continue
+        
         prev_total_value = sum(investor_balances.values())
         snapshot = {'date': row['date'], 'total': prev_total_value, **investor_balances}
         history_rows.append(snapshot)
+    
     history_df = pd.DataFrame(history_rows) if history_rows else pd.DataFrame()
     if not history_df.empty: history_df = history_df.drop_duplicates(subset='date', keep='last')
     return investor_balances, history_df
 
-# --- (Il resto del codice di setup, login, ecc. rimane identico) ---
-# ...
-st.set_page_config(page_title='Equity Tracker', layout='wide')
+# ---------- CSV Export/Import Functions ----------
+def export_events_to_csv():
+    with get_db_session() as db:
+        events_df = pd.read_sql(db.query(Event).statement, db.bind)
+        events_df['date'] = pd.to_datetime(events_df['date']).dt.strftime('%Y-%m-%d')
+        csv_buffer = io.StringIO()
+        events_df.to_csv(csv_buffer, index=False)
+        return csv_buffer.getvalue()
+
+def import_events_from_csv(csv_content):
+    try:
+        df = pd.read_csv(io.StringIO(csv_content))
+        required_cols = ['date', 'type', 'strategy_id', 'investor', 'eur_amount', 'usd_amount', 'eurusd_rate', 'valuation_total_usd', 'note']
+        
+        # Ensure all required columns exist
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = None
+        
+        with get_db_session() as db:
+            for _, row in df.iterrows():
+                event = Event(
+                    date=pd.to_datetime(row['date']).date(),
+                    type=row['type'],
+                    strategy_id=row['strategy_id'] if pd.notna(row['strategy_id']) else None,
+                    investor=row['investor'] if pd.notna(row['investor']) else None,
+                    eur_amount=float(row['eur_amount']) if pd.notna(row['eur_amount']) else None,
+                    usd_amount=float(row['usd_amount']) if pd.notna(row['usd_amount']) else None,
+                    eurusd_rate=float(row['eurusd_rate']) if pd.notna(row['eurusd_rate']) else None,
+                    valuation_total_usd=float(row['valuation_total_usd']) if pd.notna(row['valuation_total_usd']) else None,
+                    note=row['note'] if pd.notna(row['note']) else None
+                )
+                db.add(event)
+        return True, f"Successfully imported {len(df)} events"
+    except Exception as e:
+        return False, f"Import failed: {str(e)}"
+
+# ---------- Annual Report Functions ----------
+def generate_annual_report(year: int, strategy_id: int = None):
+    with get_db_session() as db:
+        start_date = datetime.date(year, 1, 1)
+        end_date = datetime.date(year, 12, 31)
+        query = db.query(Event).filter(Event.date.between(start_date, end_date))
+        if strategy_id:
+            query = query.filter(Event.strategy_id == strategy_id)
+        
+        events_df = pd.read_sql(query.statement, db.bind)
+        events_df['date'] = pd.to_datetime(events_df['date']).dt.date
+        
+        if events_df.empty:
+            return None, None
+        
+        # Calculate monthly performance
+        monthly_data = []
+        for month in range(1, 13):
+            month_start = datetime.date(year, month, 1)
+            if month == 12:
+                month_end = datetime.date(year, 12, 31)
+            else:
+                month_end = datetime.date(year, month + 1, 1) - datetime.timedelta(days=1)
+            
+            month_events = events_df[events_df['date'].between(month_start, month_end)]
+            
+            deposits = month_events[month_events['type'] == 'deposit']['usd_amount'].sum()
+            withdrawals = month_events[month_events['type'] == 'withdrawal']['usd_amount'].sum()
+            
+            # Get last valuation of the month
+            month_valuations = month_events[month_events['type'] == 'valuation']
+            end_value = month_valuations['valuation_total_usd'].iloc[-1] if not month_valuations.empty else None
+            
+            monthly_data.append({
+                'Month': datetime.date(year, month, 1).strftime('%B'),
+                'Deposits': deposits,
+                'Withdrawals': withdrawals,
+                'Net_Flow': deposits - withdrawals,
+                'End_Value': end_value
+            })
+        
+        monthly_df = pd.DataFrame(monthly_data)
+        
+        # Calculate annual metrics
+        total_deposits = events_df[events_df['type'] == 'deposit']['usd_amount'].sum()
+        total_withdrawals = events_df[events_df['type'] == 'withdrawal']['usd_amount'].sum()
+        
+        # Get start and end values
+        start_valuations = events_df[events_df['date'] >= datetime.date(year, 1, 1)]
+        start_valuation_rows = start_valuations[start_valuations['type'] == 'valuation']['valuation_total_usd']
+        start_value = start_valuation_rows.iloc[0] if not start_valuation_rows.empty else None
+        
+        end_valuations = events_df[events_df['date'] <= datetime.date(year, 12, 31)]
+        end_valuation_rows = end_valuations[end_valuations['type'] == 'valuation']['valuation_total_usd']
+        end_value = end_valuation_rows.iloc[-1] if not end_valuation_rows.empty else None
+        
+        annual_metrics = {
+            'total_deposits': total_deposits,
+            'total_withdrawals': total_withdrawals,
+            'net_investment': total_deposits - total_withdrawals,
+            'start_value': start_value,
+            'end_value': end_value,
+            'total_return': (end_value - start_value) if start_value and end_value else None,
+            'return_percentage': ((end_value - start_value) / start_value * 100) if start_value and end_value and start_value > 0 else None
+        }
+        
+        return monthly_df, annual_metrics
+
+# ---------- Main App ----------
+st.set_page_config(page_title='COA Equity Tracker', page_icon='📊', layout='wide')
+apply_coa_styling()
+
+# Initialize session state
 if 'jwt' not in st.session_state:
     st.session_state.jwt, st.session_state.username, st.session_state.role = None, None, None
+
+# ---------- Authentication ----------
 with get_db_session() as db:
     if db.query(User).count() == 0:
         u = User(username='admin', password_hash=hash_password('admin123'), role='admin')
         db.add(u)
         st.info('Default admin user created. Login with admin / admin123')
+
 if not st.session_state.jwt:
-    st.title('🔐 Equity Tracker Login')
-    with st.form("login_form"):
-        login_user, login_pw = st.text_input('Username'), st.text_input('Password', type='password')
-        if st.form_submit_button('Login', use_container_width=True):
-            with get_db_session() as db:
-                user = db.query(User).filter(User.username == login_user).first()
-                if user and verify_password(login_pw, user.password_hash):
-                    st.session_state.jwt, st.session_state.username, st.session_state.role = create_jwt(user.username, user.role), user.username, user.role
-                    st.rerun()
-                else: st.error('❌ Invalid credentials')
+    # Custom login page with COA branding
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown(f"""
+        <div style="text-align: center; padding: 2rem; background: white; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
+            <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']}); 
+                        color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem;">
+                <h1 style="margin: 0; font-size: 3rem; font-weight: 700;">COA</h1>
+                <p style="margin: 0.5rem 0 0 0; font-size: 1.2rem; opacity: 0.9;">Equity Tracker</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            login_user = st.text_input('👤 Username', placeholder="Enter your username")
+            login_pw = st.text_input('🔒 Password', type='password', placeholder="Enter your password")
+            
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+            with col_btn2:
+                if st.form_submit_button('🚀 Login', use_container_width=True):
+                    with get_db_session() as db:
+                        user = db.query(User).filter(User.username == login_user).first()
+                        if user and verify_password(login_pw, user.password_hash):
+                            st.session_state.jwt, st.session_state.username, st.session_state.role = create_jwt(user.username, user.role), user.username, user.role
+                            st.rerun()
+                        else: 
+                            st.error('❌ Invalid credentials')
     st.stop()
+
+# Verify JWT
 payload = decode_jwt(st.session_state.jwt)
 if not payload:
-    st.error('⏰ Session invalid or expired. Please re-login.'), st.session_state.clear()
-    if st.button('Back to Login'): st.rerun()
+    st.error('⏰ Session invalid or expired. Please re-login.')
+    st.session_state.clear()
+    if st.button('🔙 Back to Login'): st.rerun()
     st.stop()
+
 current_user, current_role = st.session_state.username, st.session_state.role
-header_cols = st.columns([3, 1])
-with header_cols[0]: st.title('📊 Equity Tracker')
-with header_cols[1]:
-    with st.container(border=True):
-        st.markdown(f"👤 **{current_user}** ({current_role})")
-        if st.button('🚪 Logout', use_container_width=True): st.session_state.clear(); st.rerun()
+
+# ---------- Main App Header ----------
+col1, col2, col3 = st.columns([1, 4, 1])
+with col1:
+    try:
+        # Try to display logo if it exists
+        st.image("logo.png", width=80)
+    except:
+        # Fallback to text logo
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']});
+                    color: white; padding: 1rem; border-radius: 12px; text-align: center;">
+            <h2 style="margin: 0; font-weight: 700;">COA</h2>
+        </div>
+        """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown(f"""
+    <div class="main-header">
+        <div class="header-content">
+            <div class="title-container">
+                <h1>COA Equity Tracker</h1>
+                <p>Professional Portfolio Management & Analytics</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    st.markdown(f"""
+    <div style="background: white; padding: 1rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center;">
+        <div style="color: {COA_COLORS['primary_purple']}; font-weight: 600; margin-bottom: 0.5rem;">
+            👤 {current_user}
+        </div>
+        <div style="color: {COA_COLORS['text_secondary']}; font-size: 0.9rem; margin-bottom: 1rem;">
+            {current_role.title()}
+        </div>
+        {f'<div style="color: {COA_COLORS["success"]}; font-size: 0.8rem;">✓ Active</div>' if payload else ''}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if st.button('🚪 Logout', use_container_width=True, key='logout_btn'): 
+        st.session_state.clear()
+        st.rerun()
+
 st.divider()
 
-# --- LOGICA MODIFICATA PER IL PRIMO AVVIO ---
-
-# Recupera i dati
-user_investor_name = None
+# ---------- Data Loading ----------
 with get_db_session() as db:
     user_obj = db.query(User).filter(User.username == current_user).first()
-    if user_obj: user_investor_name = user_obj.investor_name
+    user_investor_name = user_obj.investor_name if user_obj else None
+    
+    # Load all events
     all_events_df = pd.read_sql(db.query(Event).statement, db.bind)
     all_events_df['date'] = pd.to_datetime(all_events_df['date']).dt.date
+    
+    # Load strategies
+    strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+    strategies_df = pd.read_sql(db.query(Strategy).statement, db.bind)
 
-# Gestione del caso in cui il database è vuoto
+# ---------- Strategy Management (Admin Only) ----------
+if current_role == 'admin':
+    with st.expander('🎯 Strategy Management'):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader('➕ Add New Strategy')
+            with st.form("add_strategy_form"):
+                strategy_name = st.text_input('Strategy Name', placeholder='e.g., Growth Strategy')
+                strategy_desc = st.text_area('Description', placeholder='Describe the strategy...')
+                
+                if st.form_submit_button('Add Strategy', use_container_width=True):
+                    if strategy_name:
+                        with get_db_session() as db:
+                            existing = db.query(Strategy).filter(Strategy.name == strategy_name).first()
+                            if existing:
+                                st.error('Strategy name already exists')
+                            else:
+                                new_strategy = Strategy(name=strategy_name, description=strategy_desc)
+                                db.add(new_strategy)
+                                st.success(f'Strategy "{strategy_name}" added successfully!')
+                                time.sleep(1)
+                                st.rerun()
+                    else:
+                        st.error('Strategy name is required')
+        
+        with col2:
+            st.subheader('📋 Active Strategies')
+            if strategies:
+                for strategy in strategies:
+                    with st.container():
+                        col_a, col_b = st.columns([3, 1])
+                        with col_a:
+                            st.markdown(f"**{strategy.name}**")
+                            if strategy.description:
+                                st.caption(strategy.description)
+                        with col_b:
+                            if st.button('🗑️', key=f'del_strategy_{strategy.id}'):
+                                with get_db_session() as db:
+                                    strategy_obj = db.get(Strategy, strategy.id)
+                                    strategy_obj.is_active = False
+                                    db.commit()
+                                    st.success('Strategy deactivated')
+                                    time.sleep(1)
+                                    st.rerun()
+            else:
+                st.info('No strategies defined yet')
+
+# ---------- CSV Export/Import (Admin Only) ----------
+if current_role == 'admin':
+    with st.expander('📁 Data Management'):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader('📤 Export Data')
+            if st.button('Export All Events to CSV', use_container_width=True):
+                csv_data = export_events_to_csv()
+                st.download_button(
+                    label="⬇️ Download CSV",
+                    data=csv_data,
+                    file_name=f"coa_events_export_{datetime.date.today().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+        
+        with col2:
+            st.subheader('📥 Import Data')
+            uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+            if uploaded_file is not None:
+                csv_content = uploaded_file.getvalue().decode('utf-8')
+                success, message = import_events_from_csv(csv_content)
+                if success:
+                    st.success(message)
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error(message)
+
+# ---------- Main Dashboard ----------
 if all_events_df.empty:
-    st.info('No events in the system yet. The admin needs to add the first event.')
-    # Se l'utente è admin, mostra il form per creare il primo evento
+    st.info('📊 No events in the system yet. Start by adding your first deposit!')
+    
     if current_role == 'admin':
         with st.form("first_deposit_form"):
-            st.subheader("➕ Aggiungi il primo evento per iniziare")
-            d_date = st.date_input('Data', datetime.date.today())
-            investor = st.text_input('Nome Investitore')
-            eur_amount = st.number_input('Importo (EUR)', min_value=0.01, step=100.0)
-            if st.form_submit_button('Salva Primo Deposito', use_container_width=True):
+            st.subheader("➕ Add First Event")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                d_date = st.date_input('Date', datetime.date.today())
+                investor = st.text_input('Investor Name', placeholder='Enter investor name')
+                
+            with col2:
+                # Strategy selection
+                strategy_options = ['No Strategy'] + [s.name for s in strategies]
+                selected_strategy = st.selectbox('Strategy', strategy_options)
+                
+            eur_amount = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, value=1000.0)
+            
+            if st.form_submit_button('💰 Add First Deposit', use_container_width=True):
                 rate = get_historical_eurusd(d_date)
                 usd_amount = eur_amount * rate
+                
                 with get_db_session() as db:
-                    db.add(Event(date=d_date, type='deposit', investor=investor.strip(), eur_amount=eur_amount, usd_amount=usd_amount, eurusd_rate=rate))
-                st.success('Primo deposito salvato! La dashboard si caricherà.')
+                    strategy_id = None
+                    if selected_strategy != 'No Strategy':
+                        strategy = db.query(Strategy).filter(Strategy.name == selected_strategy).first()
+                        strategy_id = strategy.id if strategy else None
+                    
+                    db.add(Event(
+                        date=d_date, 
+                        type='deposit', 
+                        strategy_id=strategy_id,
+                        investor=investor.strip(), 
+                        eur_amount=eur_amount, 
+                        usd_amount=usd_amount, 
+                        eurusd_rate=rate
+                    ))
+                
+                st.success('🎉 First deposit added successfully!')
                 time.sleep(2)
                 st.rerun()
-    # Se l'utente non è admin, fermati qui
     else:
         st.stop()
+
 else:
-    # --- LOGICA DI VISUALIZZAZIONE PRINCIPALE (se ci sono eventi) ---
-    # (Questa parte rimane identica alla versione precedente)
+    # Filter events based on user role and strategy selection
+    selected_strategy_id = st.session_state.get('selected_strategy_id', None)
     
-    # Filtra gli eventi per la vista dell'utente, se non è admin
     if current_role != 'admin':
         if user_investor_name:
-            events_df = all_events_df[(all_events_df['type'] == 'valuation') | (all_events_df['investor'] == user_investor_name)]
+            events_df = all_events_df[
+                (all_events_df['type'] == 'valuation') | 
+                (all_events_df['investor'] == user_investor_name)
+            ]
         else:
             events_df = all_events_df[all_events_df['type'] == 'valuation']
     else:
         events_df = all_events_df
 
+    # Calculate balances and history for main portfolio
     total_balances, total_history = replay_events(all_events_df)
     total_portfolio_value = sum(total_balances.values())
     
+    # Calculate strategy-specific data
+    strategy_data = {}
+    for strategy in strategies:
+        strat_balances, strat_history = replay_events(all_events_df, strategy.id)
+        strategy_data[strategy.name] = {
+            'balances': strat_balances,
+            'history': strat_history,
+            'total_value': sum(strat_balances.values())
+        }
+    
+    # Calculate overall ROI
     overall_roi = 0
     if total_portfolio_value > 0:
         total_usd_invested_overall = all_events_df[all_events_df['type'] == 'deposit']['usd_amount'].sum()
         if total_usd_invested_overall > 0:
             overall_roi = ((total_portfolio_value - total_usd_invested_overall) / total_usd_invested_overall * 100)
 
-    metric_cols = st.columns(3)
-    metric_cols[0].metric('💵 Current Portfolio Total (USD)', f'${total_portfolio_value:,.2f}')
-    metric_cols[1].metric('📈 Overall ROI', f'{overall_roi:,.2f}%')
+    # ---------- Key Metrics ----------
+    st.markdown("### 📊 Portfolio Overview")
+    
+    # Main metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Total Portfolio Value</div>
+            <div class="metric-value">${total_portfolio_value:,.2f}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">Overall ROI</div>
+            <div class="metric-value" style="color: {'#38A169' if overall_roi >= 0 else '#E53E3E'}">
+                {overall_roi:+.2f}%
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col3:
+        if current_role != 'admin' and user_investor_name:
+            user_balance = total_balances.get(user_investor_name, 0.0)
+            user_share = (user_balance / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Your Share</div>
+                <div class="metric-value">{user_share:.2f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            visible_investors = sorted({inv for inv in events_df['investor'].dropna().unique()})
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Active Investors</div>
+                <div class="metric-value">{len(visible_investors)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    with col4:
+        if strategies:
+            active_strategies = len([s for s in strategies if s.is_active])
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Active Strategies</div>
+                <div class="metric-value">{active_strategies}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Strategies</div>
+                <div class="metric-value">None</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    if current_role != 'admin' and user_investor_name:
-        user_balance = total_balances.get(user_investor_name, 0.0)
-        user_share = (user_balance / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
-        metric_cols[2].metric('✨ La Tua Quota', f'{user_share:,.2f}%')
-    else:
-        visible_investors = sorted({inv for inv in events_df['investor'].dropna().unique()})
-        metric_cols[2].metric('👥 Investors', len(visible_investors))
+    st.divider()
 
-    tab_list = ["📈 Dashboard", "👥 Dettaglio Investitori"]
+    # ---------- Strategy Selector ----------
+    if strategies:
+        strategy_names = ['All Strategies'] + [s.name for s in strategies]
+        selected_strategy_name = st.selectbox('🎯 View Strategy:', strategy_names, key='strategy_selector')
+        selected_strategy_id = None
+        if selected_strategy_name != 'All Strategies':
+            selected_strategy = next((s for s in strategies if s.name == selected_strategy_name), None)
+            selected_strategy_id = selected_strategy.id if selected_strategy else None
+
+    # ---------- Navigation Tabs ----------
+    tab_list = ["📈 Dashboard", "📊 Strategy Performance", "👥 Investor Details"]
     if current_role == 'admin':
-        tab_list.append("⚙️ Gestione Eventi")
+        tab_list.extend(["📅 Annual Reports", "⚙️ Event Management"])
+    
     tabs = st.tabs(tab_list)
 
-    with tabs[0]: # Dashboard
-        # ... (Il codice delle tab è identico alla versione 2.7)
-        st.subheader("Andamento del Valore Totale del Portafoglio (USD)")
-        if not total_history.empty:
-            fig_portfolio = px.line(total_history, x='date', y='total', markers=True, labels={'date': 'Data', 'total': 'Valore Totale (USD)'})
-            st.plotly_chart(fig_portfolio, use_container_width=True)
-        if current_role == 'admin':
-            st.subheader("Valore delle Quote Individuali (USD) nel Tempo")
-            if not total_history.empty and len(total_history.columns) > 2:
-                investor_cols = [c for c in total_history.columns if c not in ['date', 'total']]
-                if investor_cols:
-                    value_df_melted = total_history.melt(id_vars='date', value_vars=investor_cols, var_name='Investor', value_name='USD Value')
-                    fig_investor_value = px.line(value_df_melted, x='date', y='USD Value', color='Investor', markers=True, labels={'USD Value': 'Valore Quota (USD)', 'date': 'Data'})
-                    st.plotly_chart(fig_investor_value, use_container_width=True)
-        else: 
-            st.subheader("Andamento del Tuo Valore (USD)")
-            if user_investor_name and user_investor_name in total_history.columns:
-                user_history_df = total_history[['date', user_investor_name]].copy()
-                user_history_df.rename(columns={user_investor_name: 'Il Tuo Valore (USD)'}, inplace=True)
-                fig_user_value = px.line(user_history_df, x='date', y='Il Tuo Valore (USD)', markers=True)
-                st.plotly_chart(fig_user_value, use_container_width=True)
-        st.subheader("Evoluzione Quote Investitori (%)")
-        history_to_show = total_history if current_role == 'admin' else total_history[['date', 'total', user_investor_name]] if user_investor_name in total_history.columns else pd.DataFrame()
-        if not history_to_show.empty and len(history_to_show.columns) > 2:
-            inv_cols = [c for c in history_to_show.columns if c not in ['date', 'total']]
-            if inv_cols:
-                pct_df = history_to_show[inv_cols].div(history_to_show['total'], axis=0).fillna(0)
-                pct_df['date'] = history_to_show['date']
-                pct_df_melted = pct_df.melt(id_vars='date', var_name='Investor', value_name='Share')
-                fig_shares = px.area(pct_df_melted, x='date', y='Share', color='Investor', markers=True)
-                fig_shares.update_yaxes(tickformat='.0%')
-                st.plotly_chart(fig_shares, use_container_width=True)
+    # Dashboard Tab
+    with tabs[0]:
+        st.markdown("### 📈 Portfolio Performance")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # Main portfolio chart
+            if not total_history.empty:
+                fig_portfolio = px.line(
+                    total_history, 
+                    x='date', 
+                    y='total', 
+                    title='Total Portfolio Value Over Time',
+                    labels={'date': 'Date', 'total': 'Portfolio Value (USD)'},
+                    line_shape='linear',
+                    render_mode='svg'
+                )
+                fig_portfolio.update_traces(
+                    line_color=COA_COLORS['primary_purple'],
+                    line_width=3,
+                    marker_size=6,
+                    marker_color=COA_COLORS['primary_blue']
+                )
+                fig_portfolio.update_layout(
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    font=dict(color=COA_COLORS['text_primary']),
+                    title_font_size=16,
+                    title_font_color=COA_COLORS['primary_purple'],
+                    height=400
+                )
+                st.plotly_chart(fig_portfolio, use_container_width=True)
+            else:
+                st.info("No historical data available yet")
+        
+        with col2:
+            # Strategy performance comparison
+            if strategy_data:
+                strategy_names = list(strategy_data.keys())
+                strategy_values = [data['total_value'] for data in strategy_data.values()]
+                
+                fig_strategies = px.pie(
+                    names=strategy_names,
+                    values=strategy_values,
+                    title='Strategy Allocation',
+                    color_discrete_sequence=[COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], 
+                                           COA_COLORS['light_purple'], COA_COLORS['light_blue']]
+                )
+                fig_strategies.update_layout(height=400)
+                st.plotly_chart(fig_strategies, use_container_width=True)
 
-    with tabs[1]: # Dettaglio Investitori
-        # ... (Il codice delle tab è identico alla versione 2.7)
-        st.subheader("Riepilogo Investitori")
+    # Strategy Performance Tab
+    with tabs[1]:
+        st.markdown("### 📊 Multi-Strategy Performance")
+        
+        if strategies and strategy_data:
+            # Show individual strategy charts
+            cols = st.columns(2)
+            for i, (strategy_name, data) in enumerate(strategy_data.items()):
+                with cols[i % 2]:
+                    if not data['history'].empty:
+                        fig = px.line(
+                            data['history'], 
+                            x='date', 
+                            y='total',
+                            title=f'{strategy_name} Performance',
+                            labels={'date': 'Date', 'total': 'Value (USD)'}
+                        )
+                        fig.update_traces(
+                            line_color=COA_COLORS['primary_blue'] if i % 2 == 0 else COA_COLORS['primary_purple'],
+                            line_width=2
+                        )
+                        fig.update_layout(height=300)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.info(f"No data for {strategy_name}")
+            
+            # Combined strategy comparison
+            if len(strategy_data) > 1:
+                st.markdown("### 📈 Strategy Comparison")
+                
+                # Combine all strategy histories
+                comparison_data = []
+                for strategy_name, data in strategy_data.items():
+                    if not data['history'].empty:
+                        temp_df = data['history'].copy()
+                        temp_df['Strategy'] = strategy_name
+                        comparison_data.append(temp_df[['date', 'total', 'Strategy']])
+                
+                if comparison_data:
+                    combined_df = pd.concat(comparison_data, ignore_index=True)
+                    fig_comparison = px.line(
+                        combined_df,
+                        x='date',
+                        y='total',
+                        color='Strategy',
+                        title='Strategy Performance Comparison',
+                        labels={'date': 'Date', 'total': 'Value (USD)'}
+                    )
+                    fig_comparison.update_layout(height=400)
+                    st.plotly_chart(fig_comparison, use_container_width=True)
+        else:
+            st.info("Define strategies to see multi-strategy performance")
+
+    # Investor Details Tab
+    with tabs[2]:
+        st.markdown("### 👥 Investor Performance")
+        
         investors_to_show = sorted({inv for inv in events_df['investor'].dropna().unique()})
         investor_data = []
+        
         for inv in investors_to_show:
             inv_deposits = all_events_df[(all_events_df['investor'] == inv) & (all_events_df['type'] == 'deposit')]
             inv_withdrawals = all_events_df[(all_events_df['investor'] == inv) & (all_events_df['type'] == 'withdrawal')]
-            total_usd_invested, total_withdrawn_usd = inv_deposits['usd_amount'].sum(), inv_withdrawals['usd_amount'].sum()
+            
+            total_usd_invested = inv_deposits['usd_amount'].sum()
+            total_withdrawn_usd = inv_withdrawals['usd_amount'].sum()
             current_usd_value = total_balances.get(inv, 0.0)
+            
             roi_pct = ((current_usd_value + total_withdrawn_usd - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0
-            investor_data.append({'Investor': inv, 'EUR Invested': inv_deposits['eur_amount'].sum(), 'USD Invested': total_usd_invested,
-                                 'Total Withdrawn (USD)': total_withdrawn_usd, 'Current Value (USD)': current_usd_value,
-                                 'Share %': (current_usd_value / total_portfolio_value * 100) if total_portfolio_value > 0 else 0, 'ROI %': roi_pct})
+            
+            investor_data.append({
+                'Investor': inv,
+                'EUR Invested': inv_deposits['eur_amount'].sum(),
+                'USD Invested': total_usd_invested,
+                'Total Withdrawn (USD)': total_withdrawn_usd,
+                'Current Value (USD)': current_usd_value,
+                'Share %': (current_usd_value / total_portfolio_value * 100) if total_portfolio_value > 0 else 0,
+                'ROI %': roi_pct
+            })
+        
         if investor_data:
             df_inv = pd.DataFrame(investor_data)
+            
+            # Color coding for ROI
             def roi_color(val):
-                style = 'color: black;';
-                if val > 0:
-                    norm_val = val / max_roi if max_roi > 0 else 0; red, green = int(255 * (1 - norm_val)), 255
-                    return f'background-color: rgb({red}, {green}, 0); {style}'
-                elif val < 0:
-                    norm_val = val / min_roi if min_roi < 0 else 0; red, green = 255, int(255 * (1 - norm_val))
-                    return f'background-color: rgb({red}, {green}, 0); {style}'
-                else: return f'background-color: yellow; {style}'
-            max_roi, min_roi = df_inv['ROI %'].max(), df_inv['ROI %'].min()
-            st.dataframe(df_inv.style.format({
-                'EUR Invested': '€{:,.2f}', 'USD Invested': '${:,.2f}', 'Total Withdrawn (USD)': '${:,.2f}',
-                'Current Value (USD)': '${:,.2f}', 'Share %': '{:.2f}%', 'ROI %': '{:+.2f}%'
-            }).apply(lambda x: x.map(roi_color), subset=['ROI %']), use_container_width=True, hide_index=True)
+                if pd.isna(val) or val == 0:
+                    return f'background-color: #FEF3C7; color: {COA_COLORS["text_primary"]};'
+                elif val > 0:
+                    intensity = min(abs(val) / 50, 1)  # Normalize to 0-1
+                    green_intensity = int(255 * (1 - intensity * 0.5))
+                    return f'background-color: rgb({int(255 * (1 - intensity))}, {green_intensity}, {int(255 * (1 - intensity))}); color: white; font-weight: 600;'
+                else:
+                    intensity = min(abs(val) / 50, 1)  # Normalize to 0-1
+                    red_intensity = int(255 * (1 - intensity * 0.5))
+                    return f'background-color: rgb({red_intensity}, {int(255 * (1 - intensity))}, {int(255 * (1 - intensity))}); color: white; font-weight: 600;'
+            
+            styled_df = df_inv.style.format({
+                'EUR Invested': '€{:,.2f}',
+                'USD Invested': '${:,.2f}',
+                'Total Withdrawn (USD)': '${:,.2f}',
+                'Current Value (USD)': '${:,.2f}',
+                'Share %': '{:.2f}%',
+                'ROI %': '{:+.2f}%'
+            }).apply(lambda x: x.map(roi_color), subset=['ROI %'])
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
+    # Annual Reports Tab (Admin Only)
     if current_role == 'admin':
-        with tabs[2]: # Gestione Eventi
-            # ... (Il codice delle tab è identico alla versione 2.7)
+        with tabs[3]:
+            st.markdown("### 📅 Annual Performance Reports")
+            
+            current_year = datetime.date.today().year
+            available_years = list(range(2020, current_year + 1))
+            
+            col1, col2, col3 = st.columns([1, 1, 2])
+            
+            with col1:
+                selected_year = st.selectbox('Select Year', available_years, index=len(available_years)-1)
+            
+            with col2:
+                strategy_filter = ['All Strategies'] + [s.name for s in strategies]
+                selected_report_strategy = st.selectbox('Filter by Strategy', strategy_filter)
+            
+            strategy_id_filter = None
+            if selected_report_strategy != 'All Strategies':
+                strategy_obj = next((s for s in strategies if s.name == selected_report_strategy), None)
+                strategy_id_filter = strategy_obj.id if strategy_obj else None
+            
+            # Generate report
+            monthly_df, annual_metrics = generate_annual_report(selected_year, strategy_id_filter)
+            
+            if monthly_df is not None and annual_metrics is not None:
+                
+                # Display key metrics
+                st.markdown(f"### 📊 {selected_year} Performance Summary")
+                
+                metric_cols = st.columns(4)
+                
+                with metric_cols[0]:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">Total Deposits</div>
+                        <div class="metric-value">${annual_metrics['total_deposits']:,.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with metric_cols[1]:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-label">Total Withdrawals</div>
+                        <div class="metric-value">${annual_metrics['total_withdrawals']:,.2f}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with metric_cols[2]:
+                    if annual_metrics['total_return'] is not None:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-label">Annual Return</div>
+                            <div class="metric-value" style="color: {'#38A169' if annual_metrics['total_return'] >= 0 else '#E53E3E'}">
+                                ${annual_metrics['total_return']:,.2f}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-label">Annual Return</div>
+                            <div class="metric-value">N/A</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                with metric_cols[3]:
+                    if annual_metrics['return_percentage'] is not None:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-label">Return %</div>
+                            <div class="metric-value" style="color: {'#38A169' if annual_metrics['return_percentage'] >= 0 else '#E53E3E'}">
+                                {annual_metrics['return_percentage']:+.2f}%
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <div class="metric-label">Return %</div>
+                            <div class="metric-value">N/A</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Monthly performance chart
+                st.markdown(f"### 📈 Monthly Performance - {selected_year}")
+                
+                # Prepare data for chart - convert month names to numbers
+                month_mapping = {
+                    'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
+                    'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12
+                }
+                chart_data = monthly_df.copy()
+                chart_data['Month'] = chart_data['Month'].map(month_mapping)
+                
+                fig_monthly = go.Figure()
+                
+                # Add bars for deposits and withdrawals
+                fig_monthly.add_trace(go.Bar(
+                    name='Deposits',
+                    x=chart_data['Month'],
+                    y=chart_data['Deposits'],
+                    marker_color=COA_COLORS['success'],
+                    text=chart_data['Deposits'].apply(lambda x: f'${x:,.0f}'),
+                    textposition='outside'
+                ))
+                
+                fig_monthly.add_trace(go.Bar(
+                    name='Withdrawals',
+                    x=chart_data['Month'],
+                    y=-chart_data['Withdrawals'],  # Negative for downward bars
+                    marker_color=COA_COLORS['error'],
+                    text=chart_data['Withdrawals'].apply(lambda x: f'${x:,.0f}'),
+                    textposition='outside'
+                ))
+                
+                # Add line for end values
+                valid_end_values = chart_data[chart_data['End_Value'].notna()]
+                if not valid_end_values.empty:
+                    fig_monthly.add_trace(go.Scatter(
+                        name='Portfolio Value',
+                        x=valid_end_values['Month'],
+                        y=valid_end_values['End_Value'],
+                        mode='lines+markers',
+                        line=dict(color=COA_COLORS['primary_purple'], width=3),
+                        marker=dict(size=8, color=COA_COLORS['primary_blue']),
+                        yaxis='y2'
+                    ))
+                
+                fig_monthly.update_layout(
+                    title=f'Monthly Cash Flows and Portfolio Value - {selected_year}',
+                    xaxis=dict(
+                        title='Month',
+                        tickmode='array',
+                        tickvals=list(range(1, 13)),
+                        ticktext=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                    ),
+                    yaxis=dict(title='Cash Flow (USD)'),
+                    yaxis2=dict(
+                        title='Portfolio Value (USD)',
+                        overlaying='y',
+                        side='right'
+                    ),
+                    barmode='relative',
+                    height=500,
+                    plot_bgcolor='white',
+                    paper_bgcolor='white',
+                    font=dict(color=COA_COLORS['text_primary'])
+                )
+                
+                st.plotly_chart(fig_monthly, use_container_width=True)
+                
+                # Monthly data table
+                st.markdown("### 📋 Monthly Breakdown")
+                display_df = monthly_df.copy()
+                display_df['Month'] = ['January', 'February', 'March', 'April', 'May', 'June',
+                                       'July', 'August', 'September', 'October', 'November', 'December']
+                
+                styled_monthly = display_df.style.format({
+                    'Deposits': '${:,.2f}',
+                    'Withdrawals': '${:,.2f}',
+                    'Net_Flow': '${:,.2f}',
+                    'End_Value': '${:,.2f}'
+                })
+                
+                st.dataframe(styled_monthly, use_container_width=True, hide_index=True)
+                
+            else:
+                st.info(f"No data available for {selected_year}")
+
+    # Event Management Tab (Admin Only)
+    if current_role == 'admin':
+        with tabs[4] if len(tabs) > 4 else st.container():
+            st.markdown("### ⚙️ Event Management")
+            
             form_cols = st.columns(2)
+            
             with form_cols[0]:
-                st.subheader("➕ Aggiungi Evento")
-                dep_tab, wd_tab, val_tab = st.tabs(["💰 Deposito", "💸 Prelievo", "📈 Valutazione"])
-                with dep_tab:
+                st.subheader("➕ Add Event")
+                
+                tab_dep, tab_wd, tab_val = st.tabs(["💰 Deposit", "💸 Withdrawal", "📈 Valuation"])
+                
+                with tab_dep:
                     with st.form("deposit_form"):
-                        d_date = st.date_input('Data', datetime.date.today(), key='d_date')
-                        investor, eur_amount = st.text_input('Nome Investitore', value=user_investor_name or "", key='d_inv'), st.number_input('Importo (EUR)', min_value=0.01, step=100.0, key='d_eur')
-                        if st.form_submit_button('Salva Deposito', use_container_width=True):
-                            rate, usd_amount = get_historical_eurusd(d_date), eur_amount * get_historical_eurusd(d_date)
-                            with get_db_session() as db: db.add(Event(date=d_date, type='deposit', investor=investor.strip(), eur_amount=eur_amount, usd_amount=usd_amount, eurusd_rate=rate))
-                            st.success(f'Deposito salvato.'); time.sleep(1); st.rerun()
-                with wd_tab:
+                        d_date = st.date_input('Date', datetime.date.today(), key='d_date')
+                        d_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='d_inv')
+                        
+                        strategy_options = ['No Strategy'] + [s.name for s in strategies]
+                        d_strategy = st.selectbox('Strategy', strategy_options, key='d_strategy')
+                        
+                        d_eur = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, key='d_eur')
+                        
+                        if st.form_submit_button('💰 Add Deposit', use_container_width=True):
+                            rate = get_historical_eurusd(d_date)
+                            usd_amount = d_eur * rate
+                            
+                            with get_db_session() as db:
+                                strategy_id = None
+                                if d_strategy != 'No Strategy':
+                                    strategy = db.query(Strategy).filter(Strategy.name == d_strategy).first()
+                                    strategy_id = strategy.id if strategy else None
+                                
+                                db.add(Event(
+                                    date=d_date, 
+                                    type='deposit', 
+                                    strategy_id=strategy_id,
+                                    investor=d_investor.strip(), 
+                                    eur_amount=d_eur, 
+                                    usd_amount=usd_amount, 
+                                    eurusd_rate=rate
+                                ))
+                            
+                            st.success('Deposit added successfully!')
+                            time.sleep(1)
+                            st.rerun()
+                
+                with tab_wd:
                     with st.form("withdrawal_form"):
-                        w_date, w_investor = st.date_input('Data', datetime.date.today(), key='w_date'), st.text_input('Nome Investitore', value=user_investor_name or "", key='w_inv')
-                        w_usd_amount = st.number_input('Importo (USD)', min_value=0.01, step=100.0, key='w_usd')
-                        if st.form_submit_button('Salva Prelievo', use_container_width=True):
-                            rate, eur_amount = get_historical_eurusd(w_date), w_usd_amount / get_historical_eurusd(w_date)
-                            with get_db_session() as db: db.add(Event(date=w_date, type='withdrawal', investor=w_investor.strip(), eur_amount=eur_amount, usd_amount=w_usd_amount, eurusd_rate=rate))
-                            st.success(f'Prelievo salvato.'); time.sleep(1); st.rerun()
-                with val_tab:
+                        w_date = st.date_input('Date', datetime.date.today(), key='w_date')
+                        w_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='w_inv')
+                        
+                        strategy_options = ['No Strategy'] + [s.name for s in strategies]
+                        w_strategy = st.selectbox('Strategy', strategy_options, key='w_strategy')
+                        
+                        w_usd = st.number_input('Amount (USD)', min_value=0.01, step=100.0, key='w_usd')
+                        
+                        if st.form_submit_button('💸 Add Withdrawal', use_container_width=True):
+                            rate = get_historical_eurusd(w_date)
+                            eur_amount = w_usd / rate
+                            
+                            with get_db_session() as db:
+                                strategy_id = None
+                                if w_strategy != 'No Strategy':
+                                    strategy = db.query(Strategy).filter(Strategy.name == w_strategy).first()
+                                    strategy_id = strategy.id if strategy else None
+                                
+                                db.add(Event(
+                                    date=w_date, 
+                                    type='withdrawal', 
+                                    strategy_id=strategy_id,
+                                    investor=w_investor.strip(), 
+                                    eur_amount=eur_amount, 
+                                    usd_amount=w_usd, 
+                                    eurusd_rate=rate
+                                ))
+                            
+                            st.success('Withdrawal added successfully!')
+                            time.sleep(1)
+                            st.rerun()
+                
+                with tab_val:
                     with st.form("valuation_form"):
-                        v_date, v_total = st.date_input('Data', datetime.date.today(), key='v_date'), st.number_input('Valore Totale Portafoglio (USD)', min_value=0.01, step=1000.0, key='v_usd')
-                        if st.form_submit_button('Salva Valutazione', use_container_width=True):
-                            with get_db_session() as db: db.add(Event(date=v_date, type='valuation', valuation_total_usd=v_total))
-                            st.success(f'Valutazione salvata.'); time.sleep(1); st.rerun()
+                        v_date = st.date_input('Date', datetime.date.today(), key='v_date')
+                        
+                        strategy_options = ['All Strategies'] + [s.name for s in strategies]
+                        v_strategy = st.selectbox('Strategy', strategy_options, key='v_strategy')
+                        
+                        v_total = st.number_input('Total Portfolio Value (USD)', min_value=0.01, step=1000.0, key='v_usd')
+                        
+                        if st.form_submit_button('📈 Add Valuation', use_container_width=True):
+                            with get_db_session() as db:
+                                strategy_id = None
+                                if v_strategy != 'All Strategies':
+                                    strategy = db.query(Strategy).filter(Strategy.name == v_strategy).first()
+                                    strategy_id = strategy.id if strategy else None
+                                
+                                db.add(Event(
+                                    date=v_date, 
+                                    type='valuation', 
+                                    strategy_id=strategy_id,
+                                    valuation_total_usd=v_total
+                                ))
+                            
+                            st.success('Valuation added successfully!')
+                            time.sleep(1)
+                            st.rerun()
+            
             with form_cols[1]:
-                st.subheader("✏️ Modifica / Elimina Eventi")
+                st.subheader("✏️ Edit/Delete Events")
+                
                 with get_db_session() as db:
                     events_to_edit = pd.read_sql(db.query(Event).statement, db.bind)
+                    
                     if not events_to_edit.empty:
-                        st.dataframe(events_to_edit.sort_values('date', ascending=False), height=250, use_container_width=True, hide_index=True)
-                        ev_id_to_edit = st.selectbox('Seleziona ID Evento', options=events_to_edit['id'].tolist())
+                        # Add strategy names
+                        events_to_edit = events_to_edit.merge(
+                            strategies_df[['id', 'name']], 
+                            left_on='strategy_id', 
+                            right_on='id', 
+                            how='left', 
+                            suffixes=('', '_strategy')
+                        )
+                        events_to_edit['strategy_name'] = events_to_edit['name_strategy'].fillna('No Strategy')
+                        
+                        st.dataframe(
+                            events_to_edit[['id', 'date', 'type', 'strategy_name', 'investor', 'eur_amount', 'usd_amount', 'valuation_total_usd']].sort_values('date', ascending=False), 
+                            height=300, 
+                            use_container_width=True, 
+                            hide_index=True
+                        )
+                        
+                        ev_id_to_edit = st.selectbox('Select Event ID to edit', options=events_to_edit['id'].tolist())
+                        
                         if ev_id_to_edit:
                             ev_row = db.get(Event, ev_id_to_edit)
                             if ev_row:
                                 with st.form(f"edit_form_{ev_row.id}"):
-                                    st.markdown(f"**Modifica Evento #{ev_row.id} ({ev_row.type})**")
-                                    e_date = st.date_input('Data', value=pd.to_datetime(ev_row.date))
+                                    st.markdown(f"**Edit Event #{ev_row.id} ({ev_row.type})**")
+                                    
+                                    e_date = st.date_input('Date', value=ev_row.date)
+                                    
+                                    if ev_row.type in ['deposit', 'withdrawal']:
+                                        e_investor = st.text_input('Investor Name', value=ev_row.investor or "")
+                                        
+                                        current_strategy = 'No Strategy'
+                                        if ev_row.strategy_id:
+                                            strategy = db.query(Strategy).filter(Strategy.id == ev_row.strategy_id).first()
+                                            current_strategy = strategy.name if strategy else 'No Strategy'
+                                        
+                                        strategy_options = ['No Strategy'] + [s.name for s in strategies]
+                                        e_strategy = st.selectbox('Strategy', strategy_options, 
+                                                                index=strategy_options.index(current_strategy))
+                                    
                                     if ev_row.type == 'deposit':
-                                        e_investor, e_eur = st.text_input('Nome Investitore', value=ev_row.investor or ""), st.number_input('Importo EUR', value=ev_row.eur_amount or 0.0)
+                                        e_eur = st.number_input('Amount (EUR)', value=ev_row.eur_amount or 0.0)
                                     elif ev_row.type == 'withdrawal':
-                                        e_investor, e_usd = st.text_input('Nome Investitore', value=ev_row.investor or ""), st.number_input('Importo USD', value=ev_row.usd_amount or 0.0)
-                                    else: e_val = st.number_input('Valore Totale USD', value=ev_row.valuation_total_usd or 0.0)
-                                    c1, c2 = st.columns(2)
-                                    if c1.form_submit_button('💾 Aggiorna', use_container_width=True):
-                                        ev_row.date, rate = e_date, get_historical_eurusd(e_date)
-                                        if ev_row.type in ['deposit', 'withdrawal']: ev_row.investor = e_investor.strip() or None
-                                        if ev_row.type == 'deposit': ev_row.eurusd_rate, ev_row.usd_amount, ev_row.eur_amount = rate, e_eur * rate, e_eur
-                                        elif ev_row.type == 'withdrawal': ev_row.eurusd_rate, ev_row.eur_amount, ev_row.usd_amount = rate, e_usd / rate, e_usd
-                                        else: ev_row.valuation_total_usd = e_val
-                                        db.commit(); st.success(f"Evento #{ev_row.id} aggiornato."); time.sleep(1); st.rerun()
-                                    if c2.form_submit_button('🗑️ Elimina', type="primary", use_container_width=True):
-                                        db.delete(ev_row); db.commit(); st.success(f"Evento #{ev_row.id} eliminato."); time.sleep(1); st.rerun()
+                                        e_usd = st.number_input('Amount (USD)', value=ev_row.usd_amount or 0.0)
+                                    else:  # valuation
+                                        e_val = st.number_input('Total Value (USD)', value=ev_row.valuation_total_usd or 0.0)
+                                    
+                                    col_btn1, col_btn2 = st.columns(2)
+                                    
+                                    with col_btn1:
+                                        if st.form_submit_button('💾 Update', use_container_width=True):
+                                            ev_row.date = e_date
+                                            rate = get_historical_eurusd(e_date)
+                                            
+                                            if ev_row.type in ['deposit', 'withdrawal']:
+                                                ev_row.investor = e_investor.strip() or None
+                                                
+                                                # Update strategy
+                                                if e_strategy != 'No Strategy':
+                                                    strategy = db.query(Strategy).filter(Strategy.name == e_strategy).first()
+                                                    ev_row.strategy_id = strategy.id if strategy else None
+                                                else:
+                                                    ev_row.strategy_id = None
+                                            
+                                            if ev_row.type == 'deposit':
+                                                ev_row.eurusd_rate = rate
+                                                ev_row.usd_amount = e_eur * rate
+                                                ev_row.eur_amount = e_eur
+                                            elif ev_row.type == 'withdrawal':
+                                                ev_row.eurusd_rate = rate
+                                                ev_row.eur_amount = e_usd / rate
+                                                ev_row.usd_amount = e_usd
+                                            else:  # valuation
+                                                ev_row.valuation_total_usd = e_val
+                                            
+                                            db.commit()
+                                            st.success(f"Event #{ev_row.id} updated!")
+                                            time.sleep(1)
+                                            st.rerun()
+                                    
+                                    with col_btn2:
+                                        if st.form_submit_button('🗑️ Delete', type="primary", use_container_width=True):
+                                            db.delete(ev_row)
+                                            db.commit()
+                                            st.success(f"Event #{ev_row.id} deleted!")
+                                            time.sleep(1)
+                                            st.rerun()
+                    else:
+                        st.info("No events to edit")
 
-# Pannello Admin (sempre in fondo)
+# ---------- Admin Panel ----------
 if current_role == 'admin':
-    with st.expander('👑 Pannello Admin: Gestione Utenti'):
-        # ... (Il codice del Pannello Admin rimane identico alla versione 2.7)
+    with st.expander('👑 Admin Panel: User Management'):
         admin_cols = st.columns(2)
+        
         with admin_cols[0]:
-            st.subheader('➕ Crea Nuovo Utente')
+            st.subheader('➕ Create New User')
             with st.form("create_user_form"):
-                new_username, new_password = st.text_input('Username'), st.text_input('Password', type='password')
-                new_role, new_investor_name = st.selectbox('Ruolo', ['user', 'admin']), st.text_input('Nome Investitore (opzionale)')
-                if st.form_submit_button('Crea Utente', use_container_width=True):
+                new_username = st.text_input('Username', placeholder='Enter username')
+                new_password = st.text_input('Password', type='password', placeholder='Enter password')
+                new_role = st.selectbox('Role', ['user', 'admin'])
+                new_investor_name = st.text_input('Investor Name (optional)', placeholder='Link to investor')
+                
+                if st.form_submit_button('Create User', use_container_width=True):
                     if new_username and new_password:
-                        user_created = False;
                         try:
                             with get_db_session() as db:
-                                if db.query(User).filter(User.username == new_username).first(): st.error('Username già esistente.')
+                                if db.query(User).filter(User.username == new_username).first():
+                                    st.error('Username already exists')
                                 else:
-                                    db.add(User(username=new_username.strip(), password_hash=hash_password(new_password), role=new_role, investor_name=new_investor_name.strip() or None))
-                                    user_created = True
-                        except Exception as e: st.error(f"Errore database: {e}")
-                        if user_created: st.success(f'Utente "{new_username}" creato.'); time.sleep(1); st.rerun()
-                    else: st.warning('Username e password sono richiesti.')
+                                    db.add(User(
+                                        username=new_username.strip(), 
+                                        password_hash=hash_password(new_password), 
+                                        role=new_role, 
+                                        investor_name=new_investor_name.strip() or None
+                                    ))
+                                    st.success(f'User "{new_username}" created successfully!')
+                                    time.sleep(1)
+                                    st.rerun()
+                        except Exception as e:
+                            st.error(f"Database error: {e}")
+                    else:
+                        st.warning('Username and password are required')
+        
         with admin_cols[1]:
-            st.subheader('✏️ Modifica o Elimina Utente')
+            st.subheader('✏️ Edit/Delete User')
             with get_db_session() as db:
                 all_users = db.query(User).all()
-                user_map = {f"{user.username} (ID: {user.id})": user.id for user in all_users}
-                if not user_map: st.info("Nessun utente da modificare.")
+                
+                if all_users:
+                    user_options = [f"{user.username} ({user.role})" for user in all_users]
+                    selected_user = st.selectbox("Select user", options=user_options)
+                    
+                    if selected_user:
+                        username = selected_user.split(' (')[0]
+                        user_to_edit = db.query(User).filter(User.username == username).first()
+                        
+                        if user_to_edit:
+                            with st.form("edit_user_form"):
+                                is_admin_user = (user_to_edit.username == 'admin')
+                                
+                                st.markdown(f"**Managing User: {user_to_edit.username}**")
+                                
+                                edited_username = st.text_input(
+                                    "Username", 
+                                    value=user_to_edit.username, 
+                                    disabled=is_admin_user
+                                )
+                                
+                                edited_role = st.selectbox(
+                                    "Role", 
+                                    ['user', 'admin'], 
+                                    index=1 if user_to_edit.role == 'admin' else 0, 
+                                    disabled=is_admin_user
+                                )
+                                
+                                edited_inv_name = st.text_input(
+                                    "Investor Name", 
+                                    value=user_to_edit.investor_name or "",
+                                    disabled=is_admin_user
+                                )
+                                
+                                new_password = st.text_input(
+                                    "New Password (leave blank to keep current)", 
+                                    type="password"
+                                )
+                                
+                                col_btn1, col_btn2 = st.columns(2)
+                                
+                                with col_btn1:
+                                    if st.form_submit_button("💾 Update User", use_container_width=True):
+                                        if not is_admin_user:
+                                            user_to_edit.investor_name = edited_inv_name.strip() or None
+                                            
+                                            if edited_username != user_to_edit.username:
+                                                existing = db.query(User).filter(User.username == edited_username).first()
+                                                if existing:
+                                                    st.error("Username already in use")
+                                                else:
+                                                    user_to_edit.username = edited_username
+                                            
+                                            user_to_edit.role = edited_role
+                                        
+                                        if new_password:
+                                            user_to_edit.password_hash = hash_password(new_password)
+                                        
+                                        db.commit()
+                                        st.success(f"User '{user_to_edit.username}' updated!")
+                                        time.sleep(1)
+                                        st.rerun()
+                                
+                                with col_btn2:
+                                    if not is_admin_user and st.form_submit_button(
+                                        "🗑️ DELETE USER", 
+                                        type="primary", 
+                                        use_container_width=True
+                                    ):
+                                        db.delete(user_to_edit)
+                                        db.commit()
+                                        st.warning(f"User '{user_to_edit.username}' deleted!")
+                                        time.sleep(1)
+                                        st.rerun()
                 else:
-                    selected_user_key = st.selectbox("Seleziona utente", options=user_map.keys())
-                    if selected_user_key:
-                        user_to_edit = db.get(User, user_map[selected_user_key])
-                        with st.form("edit_user_form"):
-                            is_admin_user = (user_to_edit.username == 'admin')
-                            st.markdown(f"**Gestione Utente: {user_to_edit.username}**")
-                            edited_username, edited_role = st.text_input("Username", value=user_to_edit.username, disabled=is_admin_user), st.selectbox("Ruolo", ['user', 'admin'], index=1 if user_to_edit.role == 'admin' else 0, disabled=is_admin_user)
-                            edited_inv_name = st.text_input("Nome Investitore", value=user_to_edit.investor_name or "", disabled=is_admin_user)
-                            new_password = st.text_input("Nuova Password (lascia vuoto per non cambiare)", type="password")
-                            c1, c2 = st.columns(2)
-                            if c1.form_submit_button("💾 Aggiorna Utente", use_container_width=True):
-                                if not is_admin_user:
-                                    user_to_edit.investor_name = edited_inv_name.strip() or None
-                                    if edited_username != user_to_edit.username and db.query(User).filter(User.username == edited_username).first(): st.error("Username già in uso.")
-                                    else: user_to_edit.username, user_to_edit.role = edited_username, edited_role
-                                if new_password: user_to_edit.password_hash = hash_password(new_password)
-                                db.commit(); st.success(f"Utente '{user_to_edit.username}' aggiornato."); time.sleep(1); st.rerun()
-                            if not is_admin_user and c2.form_submit_button("🗑️ ELIMINA UTENTE", type="primary", use_container_width=True):
-                                db.delete(user_to_edit); db.commit(); st.warning(f"Utente '{user_to_edit.username}' eliminato."); time.sleep(1); st.rerun()
+                    st.info("No users to edit")
+        
         st.divider()
-        st.subheader('👥 Utenti Attuali')
+        st.subheader('👥 Current Users')
         with get_db_session() as db:
-            st.dataframe(pd.read_sql(db.query(User).statement, db.bind)[['id', 'username', 'role', 'investor_name']], use_container_width=True, hide_index=True)
+            users_df = pd.read_sql(db.query(User).statement, db.bind)
+            if not users_df.empty:
+                # Remove password hashes for security
+                display_df = users_df[['id', 'username', 'role', 'investor_name']].copy()
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No users found")
