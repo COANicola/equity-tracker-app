@@ -605,21 +605,49 @@ with get_db_session() as db:
         st.info('Default admin user created. Login with admin / admin123')
 
 if not st.session_state.jwt:
-    # Login page - simplified like CHIODI_old.py
-    # Create centered layout for login
+    # Login page with COA branding
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.title('🔐 Equity Tracker Login')
+        # COA Logo and Branding
+        try:
+            st.image("COA_no sfondo_no scritta.png", width=120, use_column_width=True)
+        except Exception as e:
+            logger.info(f"Logo display failed: {e}")
+            # Fallback to text logo with COA branding
+            st.markdown(f"""
+            <div style="text-align: center; margin-bottom: 2rem;">
+                <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']});
+                            color: white; padding: 2rem; border-radius: 16px; text-align: center;">
+                    <h1 style="margin: 0; font-weight: 700; font-size: 3rem;">COA</h1>
+                    <p style="margin: 0.5rem 0 0 0; opacity: 0.9; font-size: 1.1rem;">Equity Tracker</p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("<h2 style='text-align: center; margin-bottom: 1.5rem;'>🔐 Login</h2>", unsafe_allow_html=True)
+        
         with st.form("login_form"):
-            login_user = st.text_input('Username')
-            login_pw = st.text_input('Password', type='password')
-            if st.form_submit_button('Login', use_container_width=True):
-                with get_db_session() as db:
-                    user = db.query(User).filter(User.username == login_user).first()
-                    if user and verify_password(login_pw, user.password_hash):
-                        st.session_state.jwt, st.session_state.username, st.session_state.role = create_jwt(user.username, user.role), user.username, user.role
-                        st.rerun()
-                    else: st.error('❌ Invalid credentials')
+            login_user = st.text_input('Username', placeholder='Enter your username')
+            login_pw = st.text_input('Password', type='password', placeholder='Enter your password')
+            
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+            with col_btn2:
+                if st.form_submit_button('Login', use_container_width=True):
+                    with get_db_session() as db:
+                        user = db.query(User).filter(User.username == login_user).first()
+                        if user and verify_password(login_pw, user.password_hash):
+                            st.session_state.jwt, st.session_state.username, st.session_state.role = create_jwt(user.username, user.role), user.username, user.role
+                            st.rerun()
+                        else: 
+                            st.error('❌ Invalid credentials')
+        
+        # Professional footer
+        st.markdown("""
+        <div style="text-align: center; margin-top: 2rem; opacity: 0.7;">
+            <p style="font-size: 0.9rem;">Professional Portfolio Management & Analytics</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
     st.stop()
 
 # Verify JWT
