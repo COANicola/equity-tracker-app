@@ -608,14 +608,13 @@ if not st.session_state.jwt:
     # Login page with COA branding
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        logo_col, title_col = st.columns([1, 4])
-        with logo_col:
+        img_c1, img_c2, img_c3 = st.columns([1, 2, 1])
+        with img_c2:
             try:
-                st.image("COA_no sfondo_no scritta.png", width=60)
+                st.image("COA_no sfondo_no scritta.png", width=80)
             except Exception as e:
                 logger.info(f"Logo display failed: {e}")
-        with title_col:
-            st.markdown("<h2 style='text-align: left; margin-bottom: 1.5rem;'>COA-Portfolio</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; margin-bottom: 1.5rem;'>COA-Portfolio</h2>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             login_user = st.text_input('Username', placeholder='Enter your username')
@@ -714,133 +713,7 @@ with get_db_session() as db:
     strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
     strategies_df = pd.read_sql(db.query(Strategy).statement, db.bind)
 
-# ---------- Protocol Management (Admin Only) ----------
-if current_role == 'admin':
-    with st.expander('🎯 Protocol Management'):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader('➕ Add New Protocol')
-            with st.form("add_protocol_form"):
-                protocol_name = st.text_input('Protocol Name', placeholder='e.g., Growth Protocol')
-                protocol_desc = st.text_area('Description', placeholder='Describe the protocol...')
-                
-                if st.form_submit_button('Add Protocol', use_container_width=True):
-                    if protocol_name:
-                        with get_db_session() as db:
-                            existing = db.query(Strategy).filter(Strategy.name == protocol_name).first()
-                            if existing:
-                                st.error('Protocol name already exists')
-                            else:
-                                new_protocol = Strategy(name=protocol_name, description=protocol_desc)
-                                db.add(new_protocol)
-                                db.commit()  # Commit the transaction
-                                st.success(f'Protocol "{protocol_name}" added successfully!')
-                                time.sleep(1)
-                                st.rerun()
-                    else:
-                        st.error('Protocol name is required')
-        
-        with col2:
-            st.subheader('📋 Active Protocols')
-            # Reload protocols within session context to avoid DetachedInstanceError
-            with get_db_session() as db:
-                active_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
-                if active_protocols:
-                    for protocol in active_protocols:
-                        with st.container():
-                            col_a, col_b, col_c = st.columns([3, 1, 1])
-                            with col_a:
-                                st.markdown(f"**{protocol.name}**")
-                                if protocol.description:
-                                    st.caption(protocol.description)
-                            with col_b:
-                                if st.button('✏️', key=f'rename_protocol_{protocol.id}', help='Rename Protocol'):
-                                    st.session_state[f'renaming_protocol_{protocol.id}'] = True
-                                    st.session_state[f'rename_name_{protocol.id}'] = protocol.name
-                                    st.session_state[f'rename_desc_{protocol.id}'] = protocol.description or ''
-                            with col_c:
-                                if st.button('🗑️', key=f'del_protocol_{protocol.id}', help='Delete Protocol'):
-                                    protocol_obj = db.get(Strategy, protocol.id)
-                                    protocol_obj.is_active = False
-                                    db.commit()
-                                    st.success('Protocol deactivated')
-                                    time.sleep(1)
-                                    st.rerun()
-                            
-                            # Rename form (shown when rename button is clicked)
-                            if st.session_state.get(f'renaming_protocol_{protocol.id}', False):
-                                with st.form(f'rename_form_{protocol.id}'):
-                                    new_name = st.text_input('New Name', 
-                                                             value=st.session_state[f'rename_name_{protocol.id}'],
-                                                             key=f'rename_name_input_{protocol.id}')
-                                    new_desc = st.text_area('New Description (optional)', 
-                                                            value=st.session_state[f'rename_desc_{protocol.id}'],
-                                                            key=f'rename_desc_input_{protocol.id}')
-                                    
-                                    col_rename1, col_rename2 = st.columns(2)
-                                    with col_rename1:
-                                        if st.form_submit_button('💾 Save', use_container_width=True):
-                                            if new_name and new_name != protocol.name:
-                                                # Check if name already exists
-                                                existing = db.query(Strategy).filter(Strategy.name == new_name).first()
-                                                if existing:
-                                                    st.error('Protocol name already exists')
-                                                else:
-                                                    protocol_obj = db.get(Strategy, protocol.id)
-                                                    protocol_obj.name = new_name
-                                                    protocol_obj.description = new_desc
-                                                    db.commit()
-                                                    st.success(f'Protocol renamed to "{new_name}"')
-                                                    # Clear rename state
-                                                    st.session_state[f'renaming_protocol_{protocol.id}'] = False
-                                                    time.sleep(1)
-                                                    st.rerun()
-                                            elif new_name == protocol.name:
-                                                # Only update description if name is the same
-                                                protocol_obj = db.get(Strategy, protocol.id)
-                                                protocol_obj.description = new_desc
-                                                db.commit()
-                                                st.success('Protocol description updated')
-                                                st.session_state[f'renaming_protocol_{protocol.id}'] = False
-                                                time.sleep(1)
-                                                st.rerun()
-                                    with col_rename2:
-                                        if st.form_submit_button('❌ Cancel', use_container_width=True):
-                                            st.session_state[f'renaming_protocol_{protocol.id}'] = False
-                                            st.rerun()
-                else:
-                    st.info('No protocols defined yet')
-
-# ---------- CSV Export/Import (Admin Only) ----------
-if current_role == 'admin':
-    with st.expander('📁 Data Management'):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader('📤 Export Data')
-            if st.button('Export All Events to CSV', use_container_width=True):
-                csv_data = export_events_to_csv()
-                st.download_button(
-                    label="⬇️ Download CSV",
-                    data=csv_data,
-                    file_name=f"coa_events_export_{datetime.date.today().strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-        
-        with col2:
-            st.subheader('📥 Import Data')
-            uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
-            if uploaded_file is not None:
-                csv_content = uploaded_file.getvalue().decode('utf-8')
-                success, message = import_events_from_csv(csv_content)
-                if success:
-                    st.success(message)
-                    time.sleep(2)
-                    st.rerun()
-                else:
-                    st.error(message)
+ 
 
 # ---------- Main Dashboard ----------
 if all_events_df.empty:
@@ -1122,15 +995,15 @@ else:
             # Color coding for ROI
             def roi_color(val):
                 if pd.isna(val) or val == 0:
-                    return f'background-color: #FEF3C7; color: {COA_COLORS["text_primary"]};'
+                    return 'background-color: #FEF3C7; color: black;'
                 elif val > 0:
-                    intensity = min(abs(val) / 50, 1)  # Normalize to 0-1
+                    intensity = min(abs(val) / 50, 1)
                     green_intensity = int(255 * (1 - intensity * 0.5))
-                    return f'background-color: rgb({int(255 * (1 - intensity))}, {green_intensity}, {int(255 * (1 - intensity))}); color: white; font-weight: 600;'
+                    return f'background-color: rgb({int(255 * (1 - intensity))}, {green_intensity}, {int(255 * (1 - intensity))}); color: black; font-weight: 600;'
                 else:
-                    intensity = min(abs(val) / 50, 1)  # Normalize to 0-1
+                    intensity = min(abs(val) / 50, 1)
                     red_intensity = int(255 * (1 - intensity * 0.5))
-                    return f'background-color: rgb({red_intensity}, {int(255 * (1 - intensity))}, {int(255 * (1 - intensity))}); color: white; font-weight: 600;'
+                    return f'background-color: rgb({red_intensity}, {int(255 * (1 - intensity))}, {int(255 * (1 - intensity))}); color: black; font-weight: 600;'
             
             styled_df = df_inv.style.format({
                 'EUR Invested': '€{:,.2f}',
@@ -1355,7 +1228,8 @@ else:
 
 # ---------- Admin Panel ----------
 if current_role == 'admin':
-    with st.expander('👑 Admin Panel: User Management'):
+    st.markdown("### 👑 Admin Panel:")
+    with st.expander('User Management'):
         admin_cols = st.columns(2)
         
         with admin_cols[0]:
@@ -1474,8 +1348,126 @@ if current_role == 'admin':
         with get_db_session() as db:
             users_df = pd.read_sql(db.query(User).statement, db.bind)
             if not users_df.empty:
-                # Remove password hashes for security
                 display_df = users_df[['id', 'username', 'role', 'investor_name']].copy()
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
             else:
                 st.info("No users found")
+
+    with st.expander('Protocol Management'):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader('➕ Add New Protocol')
+            with st.form("add_protocol_form"):
+                protocol_name = st.text_input('Protocol Name', placeholder='e.g., Growth Protocol')
+                protocol_desc = st.text_area('Description', placeholder='Describe the protocol...')
+                
+                if st.form_submit_button('Add Protocol', use_container_width=True):
+                    if protocol_name:
+                        with get_db_session() as db:
+                            existing = db.query(Strategy).filter(Strategy.name == protocol_name).first()
+                            if existing:
+                                st.error('Protocol name already exists')
+                            else:
+                                new_protocol = Strategy(name=protocol_name, description=protocol_desc)
+                                db.add(new_protocol)
+                                db.commit()
+                                st.success(f'Protocol "{protocol_name}" added successfully!')
+                                time.sleep(1)
+                                st.rerun()
+                    else:
+                        st.error('Protocol name is required')
+        
+        with col2:
+            st.subheader('📋 Active Protocols')
+            with get_db_session() as db:
+                active_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
+                if active_protocols:
+                    for protocol in active_protocols:
+                        with st.container():
+                            col_a, col_b, col_c = st.columns([3, 1, 1])
+                            with col_a:
+                                st.markdown(f"**{protocol.name}**")
+                                if protocol.description:
+                                    st.caption(protocol.description)
+                            with col_b:
+                                if st.button('✏️', key=f'rename_protocol_{protocol.id}', help='Rename Protocol'):
+                                    st.session_state[f'renaming_protocol_{protocol.id}'] = True
+                                    st.session_state[f'rename_name_{protocol.id}'] = protocol.name
+                                    st.session_state[f'rename_desc_{protocol.id}'] = protocol.description or ''
+                            with col_c:
+                                if st.button('🗑️', key=f'del_protocol_{protocol.id}', help='Delete Protocol'):
+                                    protocol_obj = db.get(Strategy, protocol.id)
+                                    protocol_obj.is_active = False
+                                    db.commit()
+                                    st.success('Protocol deactivated')
+                                    time.sleep(1)
+                                    st.rerun()
+                            
+                            if st.session_state.get(f'renaming_protocol_{protocol.id}', False):
+                                with st.form(f'rename_form_{protocol.id}'):
+                                    new_name = st.text_input('New Name', 
+                                                             value=st.session_state[f'rename_name_{protocol.id}'],
+                                                             key=f'rename_name_input_{protocol.id}')
+                                    new_desc = st.text_area('New Description (optional)', 
+                                                            value=st.session_state[f'rename_desc_{protocol.id}'],
+                                                            key=f'rename_desc_input_{protocol.id}')
+                                    
+                                    col_rename1, col_rename2 = st.columns(2)
+                                    with col_rename1:
+                                        if st.form_submit_button('💾 Save', use_container_width=True):
+                                            if new_name and new_name != protocol.name:
+                                                existing = db.query(Strategy).filter(Strategy.name == new_name).first()
+                                                if existing:
+                                                    st.error('Protocol name already exists')
+                                                else:
+                                                    protocol_obj = db.get(Strategy, protocol.id)
+                                                    protocol_obj.name = new_name
+                                                    protocol_obj.description = new_desc
+                                                    db.commit()
+                                                    st.success(f'Protocol renamed to "{new_name}"')
+                                                    st.session_state[f'renaming_protocol_{protocol.id}'] = False
+                                                    time.sleep(1)
+                                                    st.rerun()
+                                            elif new_name == protocol.name:
+                                                protocol_obj = db.get(Strategy, protocol.id)
+                                                protocol_obj.description = new_desc
+                                                db.commit()
+                                                st.success('Protocol description updated')
+                                                st.session_state[f'renaming_protocol_{protocol.id}'] = False
+                                                time.sleep(1)
+                                                st.rerun()
+                                    with col_rename2:
+                                        if st.form_submit_button('❌ Cancel', use_container_width=True):
+                                            st.session_state[f'renaming_protocol_{protocol.id}'] = False
+                                            st.rerun()
+                else:
+                    st.info('No protocols defined yet')
+
+    with st.expander('Data Management'):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader('📤 Export Data')
+            if st.button('Export All Events to CSV', use_container_width=True):
+                csv_data = export_events_to_csv()
+                st.download_button(
+                    label="⬇️ Download CSV",
+                    data=csv_data,
+                    file_name=f"coa_events_export_{datetime.date.today().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+        
+        with col2:
+            st.subheader('📥 Import Data')
+            uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+            if uploaded_file is not None:
+                csv_content = uploaded_file.getvalue().decode('utf-8')
+                success, message = import_events_from_csv(csv_content)
+                if success:
+                    st.success(message)
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error(message)
