@@ -57,17 +57,126 @@ COA_COLORS = {
 
 # ---------- Custom CSS for COA Branding ----------
 def apply_coa_styling():
+    # Use session state theme preference
+    if hasattr(st.session_state, 'theme'):
+        is_dark = st.session_state.theme == 'dark'
+    else:
+        # Fallback to system detection
+        try:
+            theme = st.get_option("theme.base")
+            is_dark = theme == "dark"
+        except:
+            is_dark = False
+    
+    # Adjust colors based on theme
+    if is_dark:
+        bg_color = "#1a1a1a"
+        card_bg = "#2d2d2d"
+        text_primary = "#e2e8f0"
+        text_secondary = "#a0aec0"
+    else:
+        bg_color = COA_COLORS['background']
+        card_bg = COA_COLORS['card_bg']
+        text_primary = COA_COLORS['text_primary']
+        text_secondary = COA_COLORS['text_secondary']
+    
     st.markdown(f"""
     <style>
-    /* Main theme colors */
+    /* Main theme colors - Dynamic based on detected theme */
     :root {{
         --primary-purple: {COA_COLORS['primary_purple']};
         --primary-blue: {COA_COLORS['primary_blue']};
         --light-gray: {COA_COLORS['light_gray']};
-        --background: {COA_COLORS['background']};
-        --card-bg: {COA_COLORS['card_bg']};
-        --text-primary: {COA_COLORS['text_primary']};
-        --text-secondary: {COA_COLORS['text_secondary']};
+        --background: {bg_color};
+        --card-bg: {card_bg};
+        --text-primary: {text_primary};
+        --text-secondary: {text_secondary};
+    }}
+    
+    /* Dark theme support using media query as fallback */
+    @media (prefers-color-scheme: dark) {{
+        :root {{
+            --background: #1a1a1a;
+            --card-bg: #2d2d2d;
+            --text-primary: #e2e8f0;
+            --text-secondary: #a0aec0;
+        }}
+        
+        /* Dark theme specific overrides */
+        .stApp {{
+            background-color: var(--background);
+            color: var(--text-primary);
+        }}
+        
+        .metric-card {{
+            background: var(--card-bg);
+            border-left: 4px solid var(--primary-purple);
+        }}
+        
+        .stForm {{
+            background: var(--card-bg);
+            border: 1px solid rgba(122, 46, 143, 0.3);
+        }}
+        
+        .streamlit-expanderHeader {{
+            background: var(--card-bg);
+            border: 1px solid rgba(122, 46, 143, 0.4);
+            color: var(--text-primary);
+        }}
+        
+        /* DataFrame styling for dark theme */
+        .dataframe {{
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+        }}
+        
+        /* Input fields for dark theme */
+        .stTextInput > div > div > input {{
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+            border: 1px solid rgba(122, 46, 143, 0.3);
+        }}
+        
+        .stTextArea > div > div > textarea {{
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+            border: 1px solid rgba(122, 46, 143, 0.3);
+        }}
+        
+        /* Select boxes for dark theme */
+        .stSelectbox > div > div > div {{
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+            border: 1px solid rgba(122, 46, 143, 0.3);
+        }}
+        
+        /* Date input for dark theme */
+        .stDateInput > div > div > input {{
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+            border: 1px solid rgba(122, 46, 143, 0.3);
+        }}
+        
+        /* Number input for dark theme */
+        .stNumberInput > div > div > input {{
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+            border: 1px solid rgba(122, 46, 143, 0.3);
+        }}
+    }}
+    
+    /* Force light theme for specific elements */
+    .main-header {{
+        background: linear-gradient(135deg, var(--primary-purple), var(--primary-blue));
+        color: white !important;
+    }}
+    
+    .title-container h1 {{
+        color: white !important;
+    }}
+    
+    .title-container p {{
+        color: rgba(255,255,255,0.9) !important;
     }}
     
     /* Global styles */
@@ -484,6 +593,10 @@ apply_coa_styling()
 if 'jwt' not in st.session_state:
     st.session_state.jwt, st.session_state.username, st.session_state.role = None, None, None
 
+# Initialize theme preference
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'light'  # Default to light theme
+
 # ---------- Authentication ----------
 with get_db_session() as db:
     if db.query(User).count() == 0:
@@ -535,9 +648,10 @@ current_user, current_role = st.session_state.username, st.session_state.role
 col1, col2, col3 = st.columns([1, 4, 1])
 with col1:
     try:
-        # Try to display logo if it exists
-        st.image("logo.png", width=80)
-    except:
+        # Try to display logo if it exists - use the actual filename
+        st.image("COA_no sfondo_no scritta.png", width=80)
+    except Exception as e:
+        logger.info(f"Logo display failed: {e}")
         # Fallback to text logo
         st.markdown(f"""
         <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']});
@@ -559,17 +673,25 @@ with col2:
     """, unsafe_allow_html=True)
 
 with col3:
-    st.markdown(f"""
-    <div style="background: white; padding: 1rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center;">
-        <div style="color: {COA_COLORS['primary_purple']}; font-weight: 600; margin-bottom: 0.5rem;">
-            👤 {current_user}
+    # Theme toggle and user info
+    theme_col1, theme_col2 = st.columns([1, 3])
+    with theme_col1:
+        if st.button('🌙' if st.session_state.theme == 'light' else '☀️', help="Toggle theme"):
+            st.session_state.theme = 'dark' if st.session_state.theme == 'light' else 'light'
+            st.rerun()
+    
+    with theme_col2:
+        st.markdown(f"""
+        <div style="background: white; padding: 1rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center;">
+            <div style="color: {COA_COLORS['primary_purple']}; font-weight: 600; margin-bottom: 0.5rem;">
+                👤 {current_user}
+            </div>
+            <div style="color: {COA_COLORS['text_secondary']}; font-size: 0.9rem; margin-bottom: 1rem;">
+                {current_role.title()}
+            </div>
+            {f'<div style="color: {COA_COLORS["success"]}; font-size: 0.8rem;">✓ Active</div>' if payload else ''}
         </div>
-        <div style="color: {COA_COLORS['text_secondary']}; font-size: 0.9rem; margin-bottom: 1rem;">
-            {current_role.title()}
-        </div>
-        {f'<div style="color: {COA_COLORS["success"]}; font-size: 0.8rem;">✓ Active</div>' if payload else ''}
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
     if st.button('🚪 Logout', use_container_width=True, key='logout_btn'): 
         st.session_state.clear()
@@ -618,25 +740,27 @@ if current_role == 'admin':
         
         with col2:
             st.subheader('📋 Active Strategies')
-            if strategies:
-                for strategy in strategies:
-                    with st.container():
-                        col_a, col_b = st.columns([3, 1])
-                        with col_a:
-                            st.markdown(f"**{strategy.name}**")
-                            if strategy.description:
-                                st.caption(strategy.description)
-                        with col_b:
-                            if st.button('🗑️', key=f'del_strategy_{strategy.id}'):
-                                with get_db_session() as db:
+            # Reload strategies within session context to avoid DetachedInstanceError
+            with get_db_session() as db:
+                active_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+                if active_strategies:
+                    for strategy in active_strategies:
+                        with st.container():
+                            col_a, col_b = st.columns([3, 1])
+                            with col_a:
+                                st.markdown(f"**{strategy.name}**")
+                                if strategy.description:
+                                    st.caption(strategy.description)
+                            with col_b:
+                                if st.button('🗑️', key=f'del_strategy_{strategy.id}'):
                                     strategy_obj = db.get(Strategy, strategy.id)
                                     strategy_obj.is_active = False
                                     db.commit()
                                     st.success('Strategy deactivated')
                                     time.sleep(1)
                                     st.rerun()
-            else:
-                st.info('No strategies defined yet')
+                else:
+                    st.info('No strategies defined yet')
 
 # ---------- CSV Export/Import (Admin Only) ----------
 if current_role == 'admin':
