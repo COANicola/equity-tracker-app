@@ -608,23 +608,14 @@ if not st.session_state.jwt:
     # Login page with COA branding
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # COA Logo and Branding
-        try:
-            st.image("COA_no sfondo_no scritta.png", width=90)
-        except Exception as e:
-            logger.info(f"Logo display failed: {e}")
-            # Fallback to text logo with COA branding
-            st.markdown(f"""
-            <div style="text-align: center; margin-bottom: 2rem;">
-                <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']});
-                            color: white; padding: 2rem; border-radius: 16px; text-align: center;">
-                    <h1 style="margin: 0; font-weight: 700; font-size: 3rem;">COA-Portfolio</h1>
-                    <p style="margin: 0.5rem 0 0 0; opacity: 0.9; font-size: 1.1rem;">Gestione e analisi del portafoglio COA</p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("<h2 style='text-align: center; margin-bottom: 1.5rem;'>COA-Portfolio</h2>", unsafe_allow_html=True)
+        logo_col, title_col = st.columns([1, 4])
+        with logo_col:
+            try:
+                st.image("COA_no sfondo_no scritta.png", width=60)
+            except Exception as e:
+                logger.info(f"Logo display failed: {e}")
+        with title_col:
+            st.markdown("<h2 style='text-align: left; margin-bottom: 1.5rem;'>COA-Portfolio</h2>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             login_user = st.text_input('Username', placeholder='Enter your username')
@@ -685,7 +676,7 @@ with col2:
     <div class="main-header">
         <div class="header-content">
             <div class="title-container">
-                <h1>COA Equity Tracker</h1>
+                <h1>COA-Portfolio</h1>
                 <p>Gestione e analisi del portafoglio COA</p>
             </div>
         </div>
@@ -693,23 +684,20 @@ with col2:
     """, unsafe_allow_html=True)
 
 with col3:
-    info_col, logout_col = st.columns([3, 1])
-    with info_col:
-        st.markdown(f"""
-        <div style="background: white; padding: 1rem; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center;">
-            <div style="color: {COA_COLORS['primary_purple']}; font-weight: 600; margin-bottom: 0.5rem;">
-                👤 {current_user}
-            </div>
-            <div style="color: {COA_COLORS['text_secondary']}; font-size: 0.9rem; margin-bottom: 1rem;">
-                {current_role.title()}
-            </div>
-            {f'<div style="color: {COA_COLORS["success"]}; font-size: 0.8rem;">✓ Active</div>' if payload else ''}
+    st.markdown(f"""
+    <div style="background: transparent; padding: 1rem; border-radius: 12px; box-shadow: none; text-align: center;">
+        <div style="color: {COA_COLORS['primary_purple']}; font-weight: 600; margin-bottom: 0.5rem;">
+            👤 {current_user}
         </div>
-        """, unsafe_allow_html=True)
-    with logout_col:
-        if st.button('Esci', use_container_width=True, key='logout_btn'):
-            st.session_state.clear()
-            st.rerun()
+        <div style="color: {COA_COLORS['text_secondary']}; font-size: 0.9rem; margin-bottom: 1rem;">
+            {current_role.title()}
+        </div>
+        {f'<div style="color: {COA_COLORS["success"]}; font-size: 0.8rem;">✓ Active</div>' if payload else ''}
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button('Esci', use_container_width=True, key='logout_btn'):
+        st.session_state.clear()
+        st.rerun()
 
 st.divider()
 
