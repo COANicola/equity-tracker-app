@@ -605,41 +605,21 @@ with get_db_session() as db:
         st.info('Default admin user created. Login with admin / admin123')
 
 if not st.session_state.jwt:
-    # Custom login page with COA branding
+    # Login page - simplified like CHIODI_old.py
+    # Create centered layout for login
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Try to display logo on login screen - centered
-        try:
-            col_logo1, col_logo2, col_logo3 = st.columns([1, 2, 1])
-            with col_logo2:
-                st.image("COA_no sfondo_no scritta.png", width=120)
-        except Exception as e:
-            logger.info(f"Login logo display failed: {e}")
-            # Fallback to text logo - centered
-            st.markdown(f"""
-            <div style="text-align: center; padding: 2rem; background: transparent; border-radius: 15px;">
-                <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']}); 
-                            color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem; display: inline-block;">
-                    <h1 style="margin: 0; font-size: 3rem; font-weight: 700;">COA</h1>
-                    <p style="margin: 0.5rem 0 0 0; font-size: 1.2rem; opacity: 0.9;">Equity Tracker</p>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
+        st.title('🔐 Equity Tracker Login')
         with st.form("login_form"):
-            login_user = st.text_input('👤 Username', placeholder="Enter your username")
-            login_pw = st.text_input('🔒 Password', type='password', placeholder="Enter your password")
-            
-            col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
-            with col_btn2:
-                if st.form_submit_button('🚀 Login', use_container_width=True):
-                    with get_db_session() as db:
-                        user = db.query(User).filter(User.username == login_user).first()
-                        if user and verify_password(login_pw, user.password_hash):
-                            st.session_state.jwt, st.session_state.username, st.session_state.role = create_jwt(user.username, user.role), user.username, user.role
-                            st.rerun()
-                        else: 
-                            st.error('❌ Invalid credentials')
+            login_user = st.text_input('Username')
+            login_pw = st.text_input('Password', type='password')
+            if st.form_submit_button('Login', use_container_width=True):
+                with get_db_session() as db:
+                    user = db.query(User).filter(User.username == login_user).first()
+                    if user and verify_password(login_pw, user.password_hash):
+                        st.session_state.jwt, st.session_state.username, st.session_state.role = create_jwt(user.username, user.role), user.username, user.role
+                        st.rerun()
+                    else: st.error('❌ Invalid credentials')
     st.stop()
 
 # Verify JWT
@@ -655,18 +635,22 @@ current_user, current_role = st.session_state.username, st.session_state.role
 # ---------- Main App Header ----------
 col1, col2, col3 = st.columns([1, 4, 1])
 with col1:
-    try:
-        # Try to display logo if it exists - use the actual filename
-        st.image("COA_no sfondo_no scritta.png", width=80)
-    except Exception as e:
-        logger.info(f"Logo display failed: {e}")
-        # Fallback to text logo
-        st.markdown(f"""
-        <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']});
-                    color: white; padding: 1rem; border-radius: 12px; text-align: center;">
-            <h2 style="margin: 0; font-weight: 700;">COA</h2>
-        </div>
-        """, unsafe_allow_html=True)
+    # Create a container to center the logo vertically
+    with st.container():
+        # Add some vertical spacing to center the logo
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+        try:
+            # Try to display logo if it exists - use the actual filename
+            st.image("COA_no sfondo_no scritta.png", width=80)
+        except Exception as e:
+            logger.info(f"Logo display failed: {e}")
+            # Fallback to text logo
+            st.markdown(f"""
+            <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']});
+                        color: white; padding: 1rem; border-radius: 12px; text-align: center;">
+                <h2 style="margin: 0; font-weight: 700;">COA</h2>
+            </div>
+            """, unsafe_allow_html=True)
 
 with col2:
     st.markdown(f"""
@@ -1002,9 +986,9 @@ else:
     st.divider()
 
     # ---------- Navigation Tabs ----------
-    tab_list = ["📈 Dashboard", "📊 Protocol Performance", "👥 Investor Details"]
+    tab_list = ["📈 Dashboard", "👥 Investor Details"]
     if current_role == 'admin':
-        tab_list.extend(["📅 Annual Reports", "⚙️ Event Management"])
+        tab_list.extend(["⚙️ Event Management"])
     
     tabs = st.tabs(tab_list)
 
@@ -1059,62 +1043,45 @@ else:
                 )
                 fig_strategies.update_layout(height=400)
                 st.plotly_chart(fig_strategies, use_container_width=True)
-
-    # Protocol Performance Tab
-    with tabs[1]:
-        st.markdown("### 📊 Multi-Protocol Performance")
         
-        if strategies and strategy_data:
-            # Show individual protocol charts
-            cols = st.columns(2)
-            for i, (protocol_name, data) in enumerate(strategy_data.items()):
-                with cols[i % 2]:
-                    if not data['history'].empty:
-                        fig = px.line(
-                            data['history'], 
-                            x='date', 
-                            y='total',
-                            title=f'{protocol_name} Performance',
-                            labels={'date': 'Date', 'total': 'Value (USD)'}
-                        )
-                        fig.update_traces(
-                            line_color=COA_COLORS['primary_blue'] if i % 2 == 0 else COA_COLORS['primary_purple'],
-                            line_width=2
-                        )
-                        fig.update_layout(height=300)
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info(f"No data for {protocol_name}")
+        # Add shared charts like in CHIODI_old.py
+        if current_role == 'admin':
+            st.subheader("📈 Individual Share Values (USD) Over Time")
+            if not total_history.empty and len(total_history.columns) > 2:
+                investor_cols = [c for c in total_history.columns if c not in ['date', 'total']]
+                if investor_cols:
+                    value_df_melted = total_history.melt(id_vars='date', value_vars=investor_cols, var_name='Investor', value_name='USD Value')
+                    fig_investor_value = px.line(value_df_melted, x='date', y='USD Value', color='Investor', markers=True, 
+                                               labels={'USD Value': 'Share Value (USD)', 'date': 'Date'})
+                    st.plotly_chart(fig_investor_value, use_container_width=True)
+        else: 
+            st.subheader("📈 Your Value Trend (USD)")
+            user_investor_name = None
+            with get_db_session() as db:
+                user = db.query(User).filter(User.username == current_user).first()
+                if user and user.investor_name:
+                    user_investor_name = user.investor_name
             
-            # Combined protocol comparison
-            if len(strategy_data) > 1:
-                st.markdown("### 📈 Protocol Comparison")
-                
-                # Combine all protocol histories
-                comparison_data = []
-                for protocol_name, data in strategy_data.items():
-                    if not data['history'].empty:
-                        temp_df = data['history'].copy()
-                        temp_df['Protocol'] = protocol_name
-                        comparison_data.append(temp_df[['date', 'total', 'Protocol']])
-                
-                if comparison_data:
-                    combined_df = pd.concat(comparison_data, ignore_index=True)
-                    fig_comparison = px.line(
-                        combined_df,
-                        x='date',
-                        y='total',
-                        color='Protocol',
-                        title='Protocol Performance Comparison',
-                        labels={'date': 'Date', 'total': 'Value (USD)'}
-                    )
-                    fig_comparison.update_layout(height=400)
-                    st.plotly_chart(fig_comparison, use_container_width=True)
-        else:
-            st.info("Define protocols to see multi-protocol performance")
+            if user_investor_name and user_investor_name in total_history.columns:
+                user_history_df = total_history[['date', user_investor_name]].copy()
+                user_history_df.rename(columns={user_investor_name: 'Your Value (USD)'}, inplace=True)
+                fig_user_value = px.line(user_history_df, x='date', y='Your Value (USD)', markers=True)
+                st.plotly_chart(fig_user_value, use_container_width=True)
+        
+        st.subheader("📊 Investor Shares Evolution (%)")
+        history_to_show = total_history.copy()
+        if not history_to_show.empty and len(history_to_show.columns) > 2:
+            inv_cols = [c for c in history_to_show.columns if c not in ['date', 'total']]
+            if inv_cols:
+                pct_df = history_to_show[inv_cols].div(history_to_show['total'], axis=0).fillna(0)
+                pct_df['date'] = history_to_show['date']
+                pct_df_melted = pct_df.melt(id_vars='date', var_name='Investor', value_name='Share')
+                fig_shares = px.area(pct_df_melted, x='date', y='Share', color='Investor', markers=True)
+                fig_shares.update_yaxes(tickformat='.0%')
+                st.plotly_chart(fig_shares, use_container_width=True)
 
     # Investor Details Tab
-    with tabs[2]:
+    with tabs[1]:
         st.markdown("### 👥 Investor Performance")
         
         investors_to_show = sorted({inv for inv in events_df['investor'].dropna().unique()})
@@ -1167,184 +1134,9 @@ else:
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-    # Annual Reports Tab (Admin Only)
-    if current_role == 'admin':
-        with tabs[3]:
-            st.markdown("### 📅 Annual Performance Reports")
-            
-            current_year = datetime.date.today().year
-            available_years = list(range(2020, current_year + 1))
-            
-            col1, col2, col3 = st.columns([1, 1, 2])
-            
-            with col1:
-                selected_year = st.selectbox('Select Year', available_years, index=len(available_years)-1)
-            
-            with col2:
-                # Reload strategies within session to avoid DetachedInstanceError
-                with get_db_session() as db:
-                    current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-                    strategy_filter = ['All Strategies'] + [s.name for s in current_strategies]
-                    selected_report_strategy = st.selectbox('Filter by Strategy', strategy_filter)
-                
-                strategy_id_filter = None
-                if selected_report_strategy != 'All Strategies':
-                    with get_db_session() as db:
-                        strategy_obj = db.query(Strategy).filter(Strategy.name == selected_report_strategy).first()
-                        strategy_id_filter = strategy_obj.id if strategy_obj else None
-            
-            # Generate report
-            monthly_df, annual_metrics = generate_annual_report(selected_year, strategy_id_filter)
-            
-            if monthly_df is not None and annual_metrics is not None:
-                
-                # Display key metrics
-                st.markdown(f"### 📊 {selected_year} Performance Summary")
-                
-                metric_cols = st.columns(4)
-                
-                with metric_cols[0]:
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <div class="metric-label">Total Deposits</div>
-                        <div class="metric-value">${annual_metrics['total_deposits']:,.2f}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with metric_cols[1]:
-                    st.markdown(f"""
-                    <div class="metric-card">
-                        <div class="metric-label">Total Withdrawals</div>
-                        <div class="metric-value">${annual_metrics['total_withdrawals']:,.2f}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with metric_cols[2]:
-                    if annual_metrics['total_return'] is not None:
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <div class="metric-label">Annual Return</div>
-                            <div class="metric-value" style="color: {'#38A169' if annual_metrics['total_return'] >= 0 else '#E53E3E'}">
-                                ${annual_metrics['total_return']:,.2f}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <div class="metric-label">Annual Return</div>
-                            <div class="metric-value">N/A</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                
-                with metric_cols[3]:
-                    if annual_metrics['return_percentage'] is not None:
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <div class="metric-label">Return %</div>
-                            <div class="metric-value" style="color: {'#38A169' if annual_metrics['return_percentage'] >= 0 else '#E53E3E'}">
-                                {annual_metrics['return_percentage']:+.2f}%
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <div class="metric-label">Return %</div>
-                            <div class="metric-value">N/A</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                
-                # Monthly performance chart
-                st.markdown(f"### 📈 Monthly Performance - {selected_year}")
-                
-                # Prepare data for chart - convert month names to numbers
-                month_mapping = {
-                    'January': 1, 'February': 2, 'March': 3, 'April': 4, 'May': 5, 'June': 6,
-                    'July': 7, 'August': 8, 'September': 9, 'October': 10, 'November': 11, 'December': 12
-                }
-                chart_data = monthly_df.copy()
-                chart_data['Month'] = chart_data['Month'].map(month_mapping)
-                
-                fig_monthly = go.Figure()
-                
-                # Add bars for deposits and withdrawals
-                fig_monthly.add_trace(go.Bar(
-                    name='Deposits',
-                    x=chart_data['Month'],
-                    y=chart_data['Deposits'],
-                    marker_color=COA_COLORS['success'],
-                    text=chart_data['Deposits'].apply(lambda x: f'${x:,.0f}'),
-                    textposition='outside'
-                ))
-                
-                fig_monthly.add_trace(go.Bar(
-                    name='Withdrawals',
-                    x=chart_data['Month'],
-                    y=-chart_data['Withdrawals'],  # Negative for downward bars
-                    marker_color=COA_COLORS['error'],
-                    text=chart_data['Withdrawals'].apply(lambda x: f'${x:,.0f}'),
-                    textposition='outside'
-                ))
-                
-                # Add line for end values
-                valid_end_values = chart_data[chart_data['End_Value'].notna()]
-                if not valid_end_values.empty:
-                    fig_monthly.add_trace(go.Scatter(
-                        name='Portfolio Value',
-                        x=valid_end_values['Month'],
-                        y=valid_end_values['End_Value'],
-                        mode='lines+markers',
-                        line=dict(color=COA_COLORS['primary_purple'], width=3),
-                        marker=dict(size=8, color=COA_COLORS['primary_blue']),
-                        yaxis='y2'
-                    ))
-                
-                fig_monthly.update_layout(
-                    title=f'Monthly Cash Flows and Portfolio Value - {selected_year}',
-                    xaxis=dict(
-                        title='Month',
-                        tickmode='array',
-                        tickvals=list(range(1, 13)),
-                        ticktext=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-                    ),
-                    yaxis=dict(title='Cash Flow (USD)'),
-                    yaxis2=dict(
-                        title='Portfolio Value (USD)',
-                        overlaying='y',
-                        side='right'
-                    ),
-                    barmode='relative',
-                    height=500,
-                    plot_bgcolor='white',
-                    paper_bgcolor='white',
-                    font=dict(color=COA_COLORS['text_primary'])
-                )
-                
-                st.plotly_chart(fig_monthly, use_container_width=True)
-                
-                # Monthly data table
-                st.markdown("### 📋 Monthly Breakdown")
-                display_df = monthly_df.copy()
-                display_df['Month'] = ['January', 'February', 'March', 'April', 'May', 'June',
-                                       'July', 'August', 'September', 'October', 'November', 'December']
-                
-                styled_monthly = display_df.style.format({
-                    'Deposits': '${:,.2f}',
-                    'Withdrawals': '${:,.2f}',
-                    'Net_Flow': '${:,.2f}',
-                    'End_Value': '${:,.2f}'
-                })
-                
-                st.dataframe(styled_monthly, use_container_width=True, hide_index=True)
-                
-            else:
-                st.info(f"No data available for {selected_year}")
-
     # Event Management Tab (Admin Only)
     if current_role == 'admin':
-        with tabs[4] if len(tabs) > 4 else st.container():
+        with tabs[2] if len(tabs) > 2 else st.container():
             st.markdown("### ⚙️ Event Management")
             
             form_cols = st.columns(2)
