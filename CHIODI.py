@@ -608,15 +608,21 @@ if not st.session_state.jwt:
     # Custom login page with COA branding
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown(f"""
-        <div style="text-align: center; padding: 2rem; background: white; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);">
-            <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']}); 
-                        color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem;">
-                <h1 style="margin: 0; font-size: 3rem; font-weight: 700;">COA</h1>
-                <p style="margin: 0.5rem 0 0 0; font-size: 1.2rem; opacity: 0.9;">Equity Tracker</p>
+        # Try to display logo on login screen
+        try:
+            st.image("COA_no sfondo_no scritta.png", width=200, use_column_width=True)
+        except Exception as e:
+            logger.info(f"Login logo display failed: {e}")
+            # Fallback to text logo
+            st.markdown(f"""
+            <div style="text-align: center; padding: 2rem; background: transparent; border-radius: 15px;">
+                <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']}); 
+                            color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem;">
+                    <h1 style="margin: 0; font-size: 3rem; font-weight: 700;">COA</h1>
+                    <p style="margin: 0.5rem 0 0 0; font-size: 1.2rem; opacity: 0.9;">Equity Tracker</p>
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
         
         with st.form("login_form"):
             login_user = st.text_input('👤 Username', placeholder="Enter your username")
@@ -676,7 +682,8 @@ with col3:
     # Theme toggle and user info
     theme_col1, theme_col2 = st.columns([1, 3])
     with theme_col1:
-        if st.button('🌙' if st.session_state.theme == 'light' else '☀️', help="Toggle theme"):
+        theme_button = '🌙' if st.session_state.theme == 'light' else '☀️'
+        if st.button(theme_button, help="Toggle theme", use_container_width=True):
             st.session_state.theme = 'dark' if st.session_state.theme == 'light' else 'light'
             st.rerun()
     
@@ -806,9 +813,11 @@ if all_events_df.empty:
                 investor = st.text_input('Investor Name', placeholder='Enter investor name')
                 
             with col2:
-                # Strategy selection
-                strategy_options = ['No Strategy'] + [s.name for s in strategies]
-                selected_strategy = st.selectbox('Strategy', strategy_options)
+                # Strategy selection - reload within session to avoid DetachedInstanceError
+                with get_db_session() as db:
+                    current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+                    strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
+                    selected_strategy = st.selectbox('Strategy', strategy_options)
                 
             eur_amount = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, value=1000.0)
             
@@ -859,13 +868,16 @@ else:
     
     # Calculate strategy-specific data
     strategy_data = {}
-    for strategy in strategies:
-        strat_balances, strat_history = replay_events(all_events_df, strategy.id)
-        strategy_data[strategy.name] = {
-            'balances': strat_balances,
-            'history': strat_history,
-            'total_value': sum(strat_balances.values())
-        }
+    # Reload strategies within session context to avoid DetachedInstanceError
+    with get_db_session() as db:
+        active_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+        for strategy in active_strategies:
+            strat_balances, strat_history = replay_events(all_events_df, strategy.id)
+            strategy_data[strategy.name] = {
+                'balances': strat_balances,
+                'history': strat_history,
+                'total_value': sum(strat_balances.values())
+            }
     
     # Calculate overall ROI
     overall_roi = 0
@@ -918,10 +930,13 @@ else:
             """, unsafe_allow_html=True)
     
     with col4:
-        if strategies:
-            active_strategies = len([s for s in strategies if s.is_active])
-            st.markdown(f"""
-            <div class="metric-card">
+        # Reload strategies within session to avoid DetachedInstanceError
+        with get_db_session() as db:
+            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+            if current_strategies:
+                active_strategies = len([s for s in current_strategies if s.is_active])
+                st.markdown(f"""
+                <div class="metric-card">
                 <div class="metric-label">Active Strategies</div>
                 <div class="metric-value">{active_strategies}</div>
             </div>
@@ -937,13 +952,16 @@ else:
     st.divider()
 
     # ---------- Strategy Selector ----------
-    if strategies:
-        strategy_names = ['All Strategies'] + [s.name for s in strategies]
-        selected_strategy_name = st.selectbox('🎯 View Strategy:', strategy_names, key='strategy_selector')
-        selected_strategy_id = None
-        if selected_strategy_name != 'All Strategies':
-            selected_strategy = next((s for s in strategies if s.name == selected_strategy_name), None)
-            selected_strategy_id = selected_strategy.id if selected_strategy else None
+    # Reload strategies within session to avoid DetachedInstanceError
+    with get_db_session() as db:
+        current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+        if current_strategies:
+            strategy_names = ['All Strategies'] + [s.name for s in current_strategies]
+            selected_strategy_name = st.selectbox('🎯 View Strategy:', strategy_names, key='strategy_selector')
+            selected_strategy_id = None
+            if selected_strategy_name != 'All Strategies':
+                selected_strategy = next((s for s in current_strategies if s.name == selected_strategy_name), None)
+                selected_strategy_id = selected_strategy.id if selected_strategy else None
 
     # ---------- Navigation Tabs ----------
     tab_list = ["📈 Dashboard", "📊 Strategy Performance", "👥 Investor Details"]
@@ -1125,13 +1143,17 @@ else:
                 selected_year = st.selectbox('Select Year', available_years, index=len(available_years)-1)
             
             with col2:
-                strategy_filter = ['All Strategies'] + [s.name for s in strategies]
-                selected_report_strategy = st.selectbox('Filter by Strategy', strategy_filter)
-            
-            strategy_id_filter = None
-            if selected_report_strategy != 'All Strategies':
-                strategy_obj = next((s for s in strategies if s.name == selected_report_strategy), None)
-                strategy_id_filter = strategy_obj.id if strategy_obj else None
+                # Reload strategies within session to avoid DetachedInstanceError
+                with get_db_session() as db:
+                    current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+                    strategy_filter = ['All Strategies'] + [s.name for s in current_strategies]
+                    selected_report_strategy = st.selectbox('Filter by Strategy', strategy_filter)
+                
+                strategy_id_filter = None
+                if selected_report_strategy != 'All Strategies':
+                    with get_db_session() as db:
+                        strategy_obj = db.query(Strategy).filter(Strategy.name == selected_report_strategy).first()
+                        strategy_id_filter = strategy_obj.id if strategy_obj else None
             
             # Generate report
             monthly_df, annual_metrics = generate_annual_report(selected_year, strategy_id_filter)
@@ -1299,8 +1321,11 @@ else:
                         d_date = st.date_input('Date', datetime.date.today(), key='d_date')
                         d_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='d_inv')
                         
-                        strategy_options = ['No Strategy'] + [s.name for s in strategies]
-                        d_strategy = st.selectbox('Strategy', strategy_options, key='d_strategy')
+                        # Reload strategies within session to avoid DetachedInstanceError
+                        with get_db_session() as db:
+                            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+                            strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
+                            d_strategy = st.selectbox('Strategy', strategy_options, key='d_strategy')
                         
                         d_eur = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, key='d_eur')
                         
@@ -1333,8 +1358,11 @@ else:
                         w_date = st.date_input('Date', datetime.date.today(), key='w_date')
                         w_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='w_inv')
                         
-                        strategy_options = ['No Strategy'] + [s.name for s in strategies]
-                        w_strategy = st.selectbox('Strategy', strategy_options, key='w_strategy')
+                        # Reload strategies within session to avoid DetachedInstanceError
+                        with get_db_session() as db:
+                            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+                            strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
+                            w_strategy = st.selectbox('Strategy', strategy_options, key='w_strategy')
                         
                         w_usd = st.number_input('Amount (USD)', min_value=0.01, step=100.0, key='w_usd')
                         
@@ -1366,8 +1394,11 @@ else:
                     with st.form("valuation_form"):
                         v_date = st.date_input('Date', datetime.date.today(), key='v_date')
                         
-                        strategy_options = ['All Strategies'] + [s.name for s in strategies]
-                        v_strategy = st.selectbox('Strategy', strategy_options, key='v_strategy')
+                        # Reload strategies within session to avoid DetachedInstanceError
+                        with get_db_session() as db:
+                            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+                            strategy_options = ['All Strategies'] + [s.name for s in current_strategies]
+                            v_strategy = st.selectbox('Strategy', strategy_options, key='v_strategy')
                         
                         v_total = st.number_input('Total Portfolio Value (USD)', min_value=0.01, step=1000.0, key='v_usd')
                         
@@ -1431,9 +1462,12 @@ else:
                                             strategy = db.query(Strategy).filter(Strategy.id == ev_row.strategy_id).first()
                                             current_strategy = strategy.name if strategy else 'No Strategy'
                                         
-                                        strategy_options = ['No Strategy'] + [s.name for s in strategies]
-                                        e_strategy = st.selectbox('Strategy', strategy_options, 
-                                                                index=strategy_options.index(current_strategy))
+                                        # Reload strategies within session to avoid DetachedInstanceError
+                                        with get_db_session() as db:
+                                            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
+                                            strategy_options = ['No Strategy'] + [s.name for s in current_strategies]
+                                            e_strategy = st.selectbox('Strategy', strategy_options, 
+                                                                    index=strategy_options.index(current_strategy))
                                     
                                     if ev_row.type == 'deposit':
                                         e_eur = st.number_input('Amount (EUR)', value=ev_row.eur_amount or 0.0)
