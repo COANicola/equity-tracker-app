@@ -702,6 +702,7 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
         records.append({
             'Year': year,
             'Start_Value': start_balance,
+            'Start_Year_Balance': denom,
             'End_Value': end_balance,
             'Deposits': float(deposits or 0.0),
             'Withdrawals': float(withdrawals or 0.0),
@@ -715,14 +716,17 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
         return
     years = [str(int(y)) for y in annual_df['Year'].tolist()]
     gains = annual_df['Net_Gain'].tolist()
+    rois = [float(r) if pd.notna(r) else 0.0 for r in annual_df['ROI %'].tolist()] if 'ROI %' in annual_df.columns else [0.0 for _ in gains]
     colors = [COA_COLORS['primary_blue'] if (g or 0) >= 0 else COA_COLORS['primary_purple'] for g in gains]
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=years,
         y=gains,
         marker_color=colors,
-        text=[f"${g:,.0f}" for g in gains],
+        text=[f"${g:,.0f} | {r:+.1f}%" for g, r in zip(gains, rois)],
         textposition='outside',
+        textfont=dict(size=16),
+        texttemplate='<b>%{text}</b>',
         cliponaxis=False
     ))
     fig.update_layout(
@@ -1236,23 +1240,27 @@ else:
                     with colm1:
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
-                            <div style="font-size:1.6rem; color: var(--text-primary);">{best_year}</div>
-                            <div style="margin-top:0.3rem; display:inline-flex; gap:8px; align-items:center;">
-                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</span>
-                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">{(best_roi or 0):+.1f}%</span>
+                            <div style="display:flex; align-items:center; justify-content:space-between;">
+                                <span style="font-size:1.6rem; color: var(--text-primary);">{best_year}</span>
+                                <span style="display:inline-flex; gap:8px; align-items:center;">
+                                    <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</span>
+                                    <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">{(best_roi or 0):+.1f}%</span>
+                                </span>
                             </div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
                         </div>
                         """, unsafe_allow_html=True)
                     with colm2:
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
-                            <div style="font-size:1.6rem; color: var(--text-primary);">{worst_year}</div>
-                            <div style="margin-top:0.3rem; display:inline-flex; gap:8px; align-items:center;">
-                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</span>
-                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">{(worst_roi or 0):+.1f}%</span>
+                            <div style="display:flex; align-items:center; justify-content:space-between;">
+                                <span style="font-size:1.6rem; color: var(--text-primary);">{worst_year}</span>
+                                <span style="display:inline-flex; gap:8px; align-items:center;">
+                                    <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</span>
+                                    <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">{(worst_roi or 0):+.1f}%</span>
+                                </span>
                             </div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
                         </div>
                         """, unsafe_allow_html=True)
                     with colm3:
@@ -1286,12 +1294,11 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
                     st.subheader('💰 Annual Investment Flows')
-                    flows_df = annual_df[['Year','Deposits','Withdrawals','End_Value']].copy()
-                    flows_df['Net_Flow'] = flows_df['End_Value']
-                    flows_df = flows_df.drop(columns=['End_Value'])
+                    flows_df = annual_df[['Year','Start_Year_Balance','Deposits','Withdrawals','End_Value','ROI %']].copy()
+                    flows_df.rename(columns={'End_Value': 'Net_Flow', 'Start_Year_Balance': 'Start_of_Year'}, inplace=True)
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     st.dataframe(
-                        flows_df.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}'}),
+                        flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
                         use_container_width=True,
                         hide_index=True
                     )
@@ -1302,18 +1309,16 @@ else:
                 display_annual_chart(annual_df, 'La Tua Performance')
                 if annual_df is not None and not annual_df.empty:
                     total_gain = float(annual_df['Net_Gain'].sum() or 0.0)
-                    total_usd_invested = float(all_events_df[(all_events_df['investor'] == user_investor_name) & (all_events_df['type'] == 'deposit')]['usd_amount'].sum() or 0.0)
-                    total_withdrawn = float(all_events_df[(all_events_df['investor'] == user_investor_name) & (all_events_df['type'] == 'withdrawal')]['usd_amount'].sum() or 0.0)
-                    current_value = float(total_balances.get(user_investor_name, 0.0))
-                    total_roi = ((current_value + total_withdrawn - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0.0
+                    final_end_value = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
+                    total_usd_invested = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
+                    total_roi = ((final_end_value - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0.0
                     st.metric('Guadagno Totale dal Primo Investimento', f"${total_gain:,.0f}", f"{total_roi:+.1f}%")
                     st.subheader('💰 I Tuoi Flussi Annuali')
-                    flows_df = annual_df[['Year','Deposits','Withdrawals','End_Value']].copy()
-                    flows_df['Net_Flow'] = flows_df['End_Value']
-                    flows_df = flows_df.drop(columns=['End_Value'])
+                    flows_df = annual_df[['Year','Start_Year_Balance','Deposits','Withdrawals','End_Value','ROI %']].copy()
+                    flows_df.rename(columns={'End_Value': 'Net_Flow', 'Start_Year_Balance': 'Start_of_Year'}, inplace=True)
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     st.dataframe(
-                        flows_df.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}'}),
+                        flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
                         use_container_width=True,
                         hide_index=True
                     )
