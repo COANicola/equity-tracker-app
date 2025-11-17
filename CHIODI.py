@@ -723,7 +723,6 @@ def generate_annual_report(year: int, strategy_id: int = None):
         return monthly_df, annual_metrics
 
 # ---------- Investor Annual Performance ----------
-@st.cache_data(show_spinner=False, ttl=3600)
 def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame, portfolio_history_df: pd.DataFrame = None) -> pd.DataFrame:
     if not investor_name or all_events_df is None or all_events_df.empty:
         return pd.DataFrame()
@@ -1372,15 +1371,18 @@ else:
                             y = int(r['Year'])
                             end_dt = datetime.date(y, 12, 31)
                             upto_end = ph_fix[ph_fix['date'] <= end_dt]
-                            end_bal_fix = float(upto_end[selected_investor].iloc[-1]) if not upto_end.empty else float(r['End_Value'] or 0.0)
-                            deposits_fix = float(r['Deposits'] or 0.0)
-                            withdrawals_fix = float(r['Withdrawals'] or 0.0)
+                            end_bal_fix = float(upto_end[selected_investor].iloc[-1]) if not upto_end.empty else float(r.get('End_Value', 0.0) or 0.0)
+                            year_mask = (pd.to_datetime(all_events_df['date']).dt.year == y) & (all_events_df['investor'] == selected_investor)
+                            deposits_fix = float(all_events_df[year_mask & (all_events_df['type'] == 'deposit')]['usd_amount'].sum() or 0.0)
+                            withdrawals_fix = float(all_events_df[year_mask & (all_events_df['type'] == 'withdrawal')]['usd_amount'].sum() or 0.0)
                             start_bal_fix = float(r['Start_Year_Balance'] or 0.0)
                             start_of_year_fix = start_bal_fix + deposits_fix
                             net_gain_fix = end_bal_fix - start_bal_fix - deposits_fix + withdrawals_fix
                             roi_fix = float(net_gain_fix / start_of_year_fix * 100) if start_of_year_fix > 0 else None
                             annual_df.at[i, 'End_Value'] = float(end_bal_fix)
                             annual_df.at[i, 'Start_of_Year'] = float(start_of_year_fix)
+                            annual_df.at[i, 'Deposits'] = float(deposits_fix)
+                            annual_df.at[i, 'Withdrawals'] = float(withdrawals_fix)
                             annual_df.at[i, 'Net_Gain'] = float(net_gain_fix)
                             annual_df.at[i, 'ROI %'] = roi_fix
                     annual_df['Start_of_Year'] = pd.to_numeric(annual_df.get('Start_Year_Balance', 0.0), errors='coerce').fillna(0.0) + pd.to_numeric(annual_df.get('Deposits', 0.0), errors='coerce').fillna(0.0)
@@ -1480,15 +1482,18 @@ else:
                             y = int(r['Year'])
                             end_dt = datetime.date(y, 12, 31)
                             upto_end = ph_fix[ph_fix['date'] <= end_dt]
-                            end_bal_fix = float(upto_end[user_investor_name].iloc[-1]) if not upto_end.empty else float(r['End_Value'] or 0.0)
-                            deposits_fix = float(r['Deposits'] or 0.0)
-                            withdrawals_fix = float(r['Withdrawals'] or 0.0)
+                            end_bal_fix = float(upto_end[user_investor_name].iloc[-1]) if not upto_end.empty else float(r.get('End_Value', 0.0) or 0.0)
+                            year_mask = (pd.to_datetime(all_events_df['date']).dt.year == y) & (all_events_df['investor'] == user_investor_name)
+                            deposits_fix = float(all_events_df[year_mask & (all_events_df['type'] == 'deposit')]['usd_amount'].sum() or 0.0)
+                            withdrawals_fix = float(all_events_df[year_mask & (all_events_df['type'] == 'withdrawal')]['usd_amount'].sum() or 0.0)
                             start_bal_fix = float(r['Start_Year_Balance'] or 0.0)
                             start_of_year_fix = start_bal_fix + deposits_fix
                             net_gain_fix = end_bal_fix - start_bal_fix - deposits_fix + withdrawals_fix
                             roi_fix = float(net_gain_fix / start_of_year_fix * 100) if start_of_year_fix > 0 else None
                             annual_df.at[i, 'End_Value'] = float(end_bal_fix)
                             annual_df.at[i, 'Start_of_Year'] = float(start_of_year_fix)
+                            annual_df.at[i, 'Deposits'] = float(deposits_fix)
+                            annual_df.at[i, 'Withdrawals'] = float(withdrawals_fix)
                             annual_df.at[i, 'Net_Gain'] = float(net_gain_fix)
                             annual_df.at[i, 'ROI %'] = roi_fix
                     annual_df['Start_of_Year'] = pd.to_numeric(annual_df.get('Start_Year_Balance', 0.0), errors='coerce').fillna(0.0) + pd.to_numeric(annual_df.get('Deposits', 0.0), errors='coerce').fillna(0.0)
