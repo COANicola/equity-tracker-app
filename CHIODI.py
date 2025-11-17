@@ -1340,6 +1340,8 @@ else:
                 if combined_rows:
                     combined = pd.concat(combined_rows).sort_values(['Investor','Year'])
                     st.subheader('💰 Annual Investment Flows (All Investors)')
+                    for c in ['Deposits','Withdrawals','Year_End_Value']:
+                        combined[c] = pd.to_numeric(combined[c], errors='coerce').fillna(0.0)
                     st.dataframe(
                         combined.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}'}),
                         use_container_width=True,
@@ -1425,6 +1427,9 @@ else:
                     flows_df.rename(columns={'End_Value': 'Year_End_Value', use_start_col: 'Start_of_Year'}, inplace=True)
                     flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
                     flows_df['Year'] = flows_df['Year'].astype(int)
+                    fmt_cols = ['Start_of_Year','Deposits','Withdrawals','Year_End_Value','ROI %']
+                    for c in fmt_cols:
+                        flows_df[c] = pd.to_numeric(flows_df[c], errors='coerce').fillna(0.0)
                     st.dataframe(
                         flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
                         use_container_width=True,
@@ -1447,6 +1452,9 @@ else:
                     flows_df.rename(columns={'End_Value': 'Year_End_Value', use_start_col: 'Start_of_Year'}, inplace=True)
                     flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
                     flows_df['Year'] = flows_df['Year'].astype(int)
+                    fmt_cols = ['Start_of_Year','Deposits','Withdrawals','Year_End_Value','ROI %']
+                    for c in fmt_cols:
+                        flows_df[c] = pd.to_numeric(flows_df[c], errors='coerce').fillna(0.0)
                     st.dataframe(
                         flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
                         use_container_width=True,
