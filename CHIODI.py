@@ -714,24 +714,31 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
         return
     years = annual_df['Year'].tolist()
     gains = annual_df['Net_Gain'].tolist()
-    colors = [COA_COLORS['success'] if (g or 0) >= 0 else COA_COLORS['error'] for g in gains]
+    colors = [COA_COLORS['primary_blue'] if (g or 0) >= 0 else COA_COLORS['primary_purple'] for g in gains]
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        x=years,
-        y=gains,
+        y=years,
+        x=gains,
+        orientation='h',
         marker_color=colors,
         text=[f"${g:,.0f}" for g in gains],
-        textposition='outside'
+        textposition='outside',
+        cliponaxis=False
     ))
     fig.update_layout(
         title=title,
-        xaxis_title='Year',
-        yaxis_title='Net Gain (USD)',
-        yaxis_tickformat='$,.0f',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
-        height=400
+        xaxis_title='Net Gain (USD)',
+        yaxis_title='Year',
+        xaxis_tickformat='$,.0f',
+        yaxis_categoryorder='category ascending',
+        plot_bgcolor='#1a1a1a',
+        paper_bgcolor='#1a1a1a',
+        font=dict(color='#e2e8f0'),
+        height=420
     )
+    fig.update_xaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
+    fig.update_yaxes(gridcolor='rgba(226,232,240,0.15)')
+    fig.update_traces(textfont_color='#e2e8f0')
     st.plotly_chart(fig, use_container_width=True)
 
 def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataFrame):
@@ -752,18 +759,22 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
     for inv, df in per_inv.items():
         gains_map = {int(r['Year']): float(r['Net_Gain'] or 0.0) for _, r in df.iterrows()}
         gains = [gains_map.get(y, 0.0) for y in years_sorted]
-        colors = [COA_COLORS['success'] if g >= 0 else COA_COLORS['error'] for g in gains]
-        fig.add_trace(go.Bar(x=years_sorted, y=gains, name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside'))
+        colors = [COA_COLORS['primary_blue'] if g >= 0 else COA_COLORS['primary_purple'] for g in gains]
+        fig.add_trace(go.Bar(y=years_sorted, x=gains, orientation='h', name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
     fig.update_layout(
         barmode='group',
         title='Annual Gains - All Investors',
-        xaxis_title='Year',
-        yaxis_title='Net Gain (USD)',
-        yaxis_tickformat='$,.0f',
-        plot_bgcolor='white',
-        paper_bgcolor='white',
+        xaxis_title='Net Gain (USD)',
+        yaxis_title='Year',
+        xaxis_tickformat='$,.0f',
+        plot_bgcolor='#1a1a1a',
+        paper_bgcolor='#1a1a1a',
+        font=dict(color='#e2e8f0'),
         height=420
     )
+    fig.update_xaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
+    fig.update_yaxes(gridcolor='rgba(226,232,240,0.15)')
+    fig.update_traces(textfont_color='#e2e8f0')
     st.plotly_chart(fig, use_container_width=True)
 
 # ---------- Main App ----------
@@ -1194,17 +1205,45 @@ else:
                     gains_series = annual_df['Net_Gain']
                     best_idx = int(gains_series.idxmax())
                     worst_idx = int(gains_series.idxmin())
+                    best_year = int(annual_df.loc[best_idx, 'Year'])
+                    best_gain = float(annual_df.loc[best_idx, 'Net_Gain'] or 0.0)
+                    worst_year = int(annual_df.loc[worst_idx, 'Year'])
+                    worst_gain = float(annual_df.loc[worst_idx, 'Net_Gain'] or 0.0)
+                    best_color = COA_COLORS['primary_blue'] if best_gain >= 0 else COA_COLORS['primary_purple']
+                    worst_color = COA_COLORS['primary_blue'] if worst_gain >= 0 else COA_COLORS['primary_purple']
                     colm1, colm2, colm3, colm4 = st.columns(4)
                     with colm1:
-                        st.metric('Best Year', f"{int(annual_df.loc[best_idx, 'Year'])}", f"${annual_df.loc[best_idx, 'Net_Gain']:,.0f}")
+                        st.markdown(f"""
+                        <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
+                            <div style="font-size:1.6rem; color: var(--text-primary);">{best_year}</div>
+                            <div style="margin-top:0.3rem; display:inline-block; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                     with colm2:
-                        st.metric('Worst Year', f"{int(annual_df.loc[worst_idx, 'Year'])}", f"${annual_df.loc[worst_idx, 'Net_Gain']:,.0f}")
+                        st.markdown(f"""
+                        <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
+                            <div style="font-size:1.6rem; color: var(--text-primary);">{worst_year}</div>
+                            <div style="margin-top:0.3rem; display:inline-block; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                     with colm3:
                         avg_gain = float(gains_series.mean() or 0.0)
-                        st.metric('Avg Annual', f"${avg_gain:,.0f}")
+                        st.markdown(f"""
+                        <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Avg Annual</div>
+                            <div style="font-size:1.6rem; color: var(--text-primary);">${avg_gain:,.0f}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
                     with colm4:
                         total_gain = float(gains_series.sum() or 0.0)
-                        st.metric('Total Gain', f"${total_gain:,.0f}")
+                        st.markdown(f"""
+                        <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Total Gain</div>
+                            <div style="font-size:1.6rem; color: var(--text-primary);">${total_gain:,.0f}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
         else:
             if user_investor_name:
                 st.subheader('📈 Il Tuo Storico Annuale')
