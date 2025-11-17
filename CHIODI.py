@@ -826,11 +826,12 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
     years_sorted = sorted(list(all_years))
     years_sorted_str = [str(int(y)) for y in years_sorted]
     fig = go.Figure()
+    palette = px.colors.qualitative.Plotly
+    inv_colors = {inv: palette[i % len(palette)] for i, inv in enumerate(sorted(per_inv.keys()))}
     for inv, df in per_inv.items():
         gains_map = {int(r['Year']): (float(r['Net_Gain']) if pd.notna(r['Net_Gain']) else 0.0) for _, r in df.iterrows()}
         gains = [gains_map.get(y, 0.0) for y in years_sorted]
-        colors = [COA_COLORS['primary_blue'] if g >= 0 else COA_COLORS['primary_purple'] for g in gains]
-        fig.add_trace(go.Bar(x=years_sorted_str, y=gains, name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
+        fig.add_trace(go.Bar(x=years_sorted_str, y=gains, name=inv, marker_color=inv_colors.get(inv, COA_COLORS['primary_blue']), text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
     fig.update_layout(
         barmode='group',
         title='Annual Gains - All Investors',
@@ -1271,6 +1272,10 @@ else:
     # Investor Details Tab
     with tabs[1]:
         st.markdown("### 👥 Investor Performance")
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
         
         investors_to_show = sorted({inv for inv in events_df['investor'].dropna().unique()})
         investor_data = []
@@ -1351,6 +1356,8 @@ else:
                 annual_df = calculate_annual_performance(selected_investor, all_events_df, total_history)
                 display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
                 if annual_df is not None and not annual_df.empty:
+                    if 'Start_of_Year' not in annual_df.columns and 'Start_Year_Balance' in annual_df.columns:
+                        annual_df['Start_of_Year'] = pd.to_numeric(annual_df['Start_Year_Balance'], errors='coerce').fillna(0.0) + pd.to_numeric(annual_df['Deposits'], errors='coerce').fillna(0.0)
                     gains_series = pd.to_numeric(annual_df['Net_Gain'], errors='coerce').fillna(0.0)
                     best_idx = int(gains_series.idxmax())
                     worst_idx = int(gains_series.idxmin())
@@ -1441,6 +1448,8 @@ else:
                 annual_df = calculate_annual_performance(user_investor_name, all_events_df, total_history)
                 display_annual_chart(annual_df, 'La Tua Performance')
                 if annual_df is not None and not annual_df.empty:
+                    if 'Start_of_Year' not in annual_df.columns and 'Start_Year_Balance' in annual_df.columns:
+                        annual_df['Start_of_Year'] = pd.to_numeric(annual_df['Start_Year_Balance'], errors='coerce').fillna(0.0) + pd.to_numeric(annual_df['Deposits'], errors='coerce').fillna(0.0)
                     total_gain = float(annual_df['Net_Gain'].sum() or 0.0)
                     final_end_value = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
                     total_usd_invested = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
