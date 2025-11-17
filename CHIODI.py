@@ -1067,7 +1067,54 @@ else:
         
         with col1:
             # Main portfolio chart
-            if not total_history.empty:
+            if strategy_data and any(not d['history'].empty for d in strategy_data.values()):
+                histories = {name: d['history'][['date', 'total']].copy() for name, d in strategy_data.items() if not d['history'].empty}
+                for k in histories:
+                    histories[k]['date'] = pd.to_datetime(histories[k]['date'])
+                all_dates = sorted(pd.to_datetime(pd.concat([h['date'] for h in histories.values()]).unique()))
+                agg_df = pd.DataFrame({'date': all_dates})
+                proto_cols = []
+                for idx, (name, h) in enumerate(histories.items()):
+                    col_name = name
+                    proto_cols.append(col_name)
+                    tmp = h.rename(columns={'total': col_name})
+                    agg_df = agg_df.merge(tmp, on='date', how='left')
+                for c in proto_cols:
+                    agg_df[c] = agg_df[c].ffill().fillna(0.0)
+                agg_df['Total'] = agg_df[proto_cols].sum(axis=1)
+                fig_portfolio = go.Figure()
+                fig_portfolio.add_trace(go.Scatter(
+                    x=agg_df['date'],
+                    y=agg_df['Total'],
+                    name='Total Portfolio',
+                    mode='lines+markers',
+                    line=dict(color=COA_COLORS['primary_purple'], width=3),
+                    marker=dict(size=6, color=COA_COLORS['primary_blue'])
+                ))
+                for i, c in enumerate(proto_cols):
+                    fig_portfolio.add_trace(go.Scatter(
+                        x=agg_df['date'],
+                        y=agg_df[c],
+                        name=c,
+                        mode='lines',
+                        line=dict(width=2)
+                    ))
+                fig_portfolio.update_layout(
+                    title='Total Portfolio Value Over Time',
+                    plot_bgcolor='#1a1a1a',
+                    paper_bgcolor='#1a1a1a',
+                    font=dict(color='#e2e8f0'),
+                    title_font_size=16,
+                    title_font_color=COA_COLORS['primary_purple'],
+                    height=420,
+                    hovermode='x unified',
+                    xaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False),
+                    yaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False, tickformat='$,.0f')
+                )
+                fig_portfolio.update_xaxes(gridcolor='rgba(226,232,240,0.15)')
+                fig_portfolio.update_yaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
+                st.plotly_chart(fig_portfolio, use_container_width=True)
+            elif not total_history.empty:
                 fig_portfolio = px.line(
                     total_history,
                     x='date',
