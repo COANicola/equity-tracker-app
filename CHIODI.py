@@ -566,7 +566,56 @@ def replay_events(events_df: pd.DataFrame, strategy_id: int = None):
     
     history_df = pd.DataFrame(history_rows) if history_rows else pd.DataFrame()
     if not history_df.empty: history_df = history_df.drop_duplicates(subset='date', keep='last')
-    return investor_balances, history_df
+        return investor_balances, history_df
+
+def compute_aggregated_portfolio_history(all_events_df: pd.DataFrame, strategy_data: dict):
+    if not strategy_data:
+        return None, pd.DataFrame(), None
+    histories = {name: d['history'][['date', 'total']].copy() for name, d in strategy_data.items() if not d['history'].empty}
+    if not histories:
+        return None, pd.DataFrame(), None
+    for k in histories:
+        histories[k]['date'] = pd.to_datetime(histories[k]['date'])
+    all_dates = sorted(pd.to_datetime(pd.concat([h['date'] for h in histories.values()]).unique()))
+    agg_df = pd.DataFrame({'date': all_dates})
+    proto_cols = []
+    for name, h in histories.items():
+        col_name = name
+        proto_cols.append(col_name)
+        tmp = h.rename(columns={'total': col_name})
+        agg_df = agg_df.merge(tmp, on='date', how='left')
+    for c in proto_cols:
+        agg_df[c] = agg_df[c].ffill().fillna(0.0)
+    agg_df['Total'] = agg_df[proto_cols].sum(axis=1)
+    dep_wd = all_events_df[all_events_df['type'].isin(['deposit', 'withdrawal'])].copy()
+    if not dep_wd.empty:
+        dep_wd['date'] = pd.to_datetime(dep_wd['date'])
+    union_dates = sorted(pd.to_datetime(pd.unique(pd.concat([agg_df['date'], dep_wd['date'] if not dep_wd.empty else pd.Series([])]) )))
+    balances = {}
+    rows = []
+    for dt in union_dates:
+        if not dep_wd.empty:
+            todays = dep_wd[dep_wd['date'] == dt]
+            for _, r in todays.iterrows():
+                inv = r.get('investor')
+                usd_amount = float(r.get('usd_amount', 0.0) or 0.0)
+                if r.get('type') == 'deposit' and inv and usd_amount > 0:
+                    balances[inv] = balances.get(inv, 0.0) + usd_amount
+                elif r.get('type') == 'withdrawal' and inv and usd_amount > 0:
+                    balances[inv] = balances.get(inv, 0.0) - usd_amount
+        if dt in set(agg_df['date']):
+            target_total = float(agg_df.loc[agg_df['date'] == dt, 'Total'].iloc[0])
+            current_total = sum(balances.values())
+            if current_total > 0 and target_total > 0:
+                factor = target_total / current_total
+                for inv in list(balances.keys()):
+                    balances[inv] = balances[inv] * factor
+        snap = {'date': dt, 'total': sum(balances.values())}
+        for inv, val in balances.items():
+            snap[inv] = val
+        rows.append(snap)
+    history_df = pd.DataFrame(rows) if rows else pd.DataFrame()
+    return balances, history_df, agg_df
 
 # ---------- CSV Export/Import Functions ----------
 def export_events_to_csv():
@@ -985,31 +1034,16 @@ else:
             }
 
     aggregated_total = None
-    if strategy_data and any(not d['history'].empty for d in strategy_data.values()):
-        histories = {name: d['history'][['date', 'total']].copy() for name, d in strategy_data.items() if not d['history'].empty}
-        for k in histories:
-            histories[k]['date'] = pd.to_datetime(histories[k]['date'])
-        all_dates = sorted(pd.to_datetime(pd.concat([h['date'] for h in histories.values()]).unique()))
-        agg_df_tmp = pd.DataFrame({'date': all_dates})
-        proto_cols_tmp = []
-        for name, h in histories.items():
-            col_name = name
-            proto_cols_tmp.append(col_name)
-            tmp = h.rename(columns={'total': col_name})
-            agg_df_tmp = agg_df_tmp.merge(tmp, on='date', how='left')
-        for c in proto_cols_tmp:
-            agg_df_tmp[c] = agg_df_tmp[c].ffill().fillna(0.0)
-        agg_df_tmp['Total'] = agg_df_tmp[proto_cols_tmp].sum(axis=1)
-        if not agg_df_tmp.empty:
-            aggregated_total = float(agg_df_tmp['Total'].iloc[-1])
+    agg_balances, agg_history_df, agg_df_tmp = compute_aggregated_portfolio_history(all_events_df, strategy_data)
+    if agg_df_tmp is not None and not agg_df_tmp.empty:
+        aggregated_total = float(agg_df_tmp['Total'].iloc[-1])
 
     if aggregated_total is not None:
-        sum_bal = sum(total_balances.values())
         total_portfolio_value = aggregated_total
-        if sum_bal > 0 and aggregated_total != sum_bal:
-            factor = aggregated_total / sum_bal
-            for inv in list(total_balances.keys()):
-                total_balances[inv] = total_balances[inv] * factor
+        if agg_history_df is not None and not agg_history_df.empty:
+            total_history = agg_history_df.copy()
+        if agg_balances is not None:
+            total_balances = agg_balances
     
     # Calculate overall ROI
     overall_roi = 0
@@ -1095,21 +1129,9 @@ else:
         
         with col1:
             # Main portfolio chart
-            if strategy_data and any(not d['history'].empty for d in strategy_data.values()):
-                histories = {name: d['history'][['date', 'total']].copy() for name, d in strategy_data.items() if not d['history'].empty}
-                for k in histories:
-                    histories[k]['date'] = pd.to_datetime(histories[k]['date'])
-                all_dates = sorted(pd.to_datetime(pd.concat([h['date'] for h in histories.values()]).unique()))
-                agg_df = pd.DataFrame({'date': all_dates})
-                proto_cols = []
-                for idx, (name, h) in enumerate(histories.items()):
-                    col_name = name
-                    proto_cols.append(col_name)
-                    tmp = h.rename(columns={'total': col_name})
-                    agg_df = agg_df.merge(tmp, on='date', how='left')
-                for c in proto_cols:
-                    agg_df[c] = agg_df[c].ffill().fillna(0.0)
-                agg_df['Total'] = agg_df[proto_cols].sum(axis=1)
+            if agg_df_tmp is not None and not agg_df_tmp.empty:
+                agg_df = agg_df_tmp.copy()
+                proto_cols = [c for c in agg_df.columns if c not in ['date','Total']]
                 fig_portfolio = go.Figure()
                 fig_portfolio.add_trace(go.Scatter(
                     x=agg_df['date'],
@@ -1181,23 +1203,14 @@ else:
         
         with col2:
             # Strategy performance comparison
-            if strategy_data and any(not d['history'].empty for d in strategy_data.values()):
-                histories = {name: d['history'][['date', 'total']].copy() for name, d in strategy_data.items() if not d['history'].empty}
-                for k in histories:
-                    histories[k]['date'] = pd.to_datetime(histories[k]['date'])
-                all_dates = sorted(pd.to_datetime(pd.concat([h['date'] for h in histories.values()]).unique()))
-                agg_df_pie = pd.DataFrame({'date': all_dates})
-                proto_cols_pie = []
-                for name, h in histories.items():
-                    col_name = name
-                    proto_cols_pie.append(col_name)
-                    tmp = h.rename(columns={'total': col_name})
-                    agg_df_pie = agg_df_pie.merge(tmp, on='date', how='left')
-                for c in proto_cols_pie:
-                    agg_df_pie[c] = agg_df_pie[c].ffill().fillna(0.0)
+            if agg_df_tmp is not None and not agg_df_tmp.empty:
+                agg_df_pie = agg_df_tmp.copy()
+                proto_cols_pie = [c for c in agg_df_pie.columns if c not in ['date','Total']]
                 alloc_names = proto_cols_pie
                 alloc_values = agg_df_pie[proto_cols_pie].iloc[-1].tolist() if not agg_df_pie.empty else []
-                color_map = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
+                base_map = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
+                default_colors = [COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], COA_COLORS['light_purple'], COA_COLORS['light_blue']]
+                color_map = {name: base_map.get(name, default_colors[i % len(default_colors)]) for i, name in enumerate(alloc_names)}
                 fig_strategies = px.pie(
                     names=alloc_names,
                     values=alloc_values,
