@@ -1356,17 +1356,35 @@ else:
                 annual_df = calculate_annual_performance(selected_investor, all_events_df, total_history)
                 display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
                 if annual_df is not None and not annual_df.empty:
+                    if total_history is not None and not total_history.empty and selected_investor in total_history.columns:
+                        ph_fix = total_history.copy()
+                        ph_fix['date'] = pd.to_datetime(ph_fix['date']).dt.date
+                        for i, r in annual_df.iterrows():
+                            y = int(r['Year'])
+                            end_dt = datetime.date(y, 12, 31)
+                            upto_end = ph_fix[ph_fix['date'] <= end_dt]
+                            end_bal_fix = float(upto_end[selected_investor].iloc[-1]) if not upto_end.empty else float(r['End_Value'] or 0.0)
+                            deposits_fix = float(r['Deposits'] or 0.0)
+                            withdrawals_fix = float(r['Withdrawals'] or 0.0)
+                            start_bal_fix = float(r['Start_Year_Balance'] or 0.0)
+                            start_of_year_fix = start_bal_fix + deposits_fix
+                            net_gain_fix = end_bal_fix - start_bal_fix - deposits_fix + withdrawals_fix
+                            roi_fix = float(net_gain_fix / start_of_year_fix * 100) if start_of_year_fix > 0 else None
+                            annual_df.at[i, 'End_Value'] = float(end_bal_fix)
+                            annual_df.at[i, 'Start_of_Year'] = float(start_of_year_fix)
+                            annual_df.at[i, 'Net_Gain'] = float(net_gain_fix)
+                            annual_df.at[i, 'ROI %'] = roi_fix
                     if 'Start_of_Year' not in annual_df.columns and 'Start_Year_Balance' in annual_df.columns:
                         annual_df['Start_of_Year'] = pd.to_numeric(annual_df['Start_Year_Balance'], errors='coerce').fillna(0.0) + pd.to_numeric(annual_df['Deposits'], errors='coerce').fillna(0.0)
                     gains_series = pd.to_numeric(annual_df['Net_Gain'], errors='coerce').fillna(0.0)
                     best_idx = int(gains_series.idxmax())
                     worst_idx = int(gains_series.idxmin())
                     best_year = int(annual_df.loc[best_idx, 'Year'])
-                    best_gain = float(annual_df.loc[best_idx, 'Net_Gain'] or 0.0)
+                    best_gain = float(gains_series.iloc[best_idx])
                     best_roi_val = annual_df.loc[best_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
                     best_roi = float(best_roi_val) if (best_roi_val is not None and pd.notna(best_roi_val)) else 0.0
                     worst_year = int(annual_df.loc[worst_idx, 'Year'])
-                    worst_gain = float(annual_df.loc[worst_idx, 'Net_Gain'] or 0.0)
+                    worst_gain = float(gains_series.iloc[worst_idx])
                     worst_roi_val = annual_df.loc[worst_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
                     worst_roi = float(worst_roi_val) if (worst_roi_val is not None and pd.notna(worst_roi_val)) else 0.0
                     best_color = COA_COLORS['primary_blue'] if best_gain >= 0 else COA_COLORS['primary_purple']
@@ -1448,6 +1466,24 @@ else:
                 annual_df = calculate_annual_performance(user_investor_name, all_events_df, total_history)
                 display_annual_chart(annual_df, 'La Tua Performance')
                 if annual_df is not None and not annual_df.empty:
+                    if total_history is not None and not total_history.empty and user_investor_name in total_history.columns:
+                        ph_fix = total_history.copy()
+                        ph_fix['date'] = pd.to_datetime(ph_fix['date']).dt.date
+                        for i, r in annual_df.iterrows():
+                            y = int(r['Year'])
+                            end_dt = datetime.date(y, 12, 31)
+                            upto_end = ph_fix[ph_fix['date'] <= end_dt]
+                            end_bal_fix = float(upto_end[user_investor_name].iloc[-1]) if not upto_end.empty else float(r['End_Value'] or 0.0)
+                            deposits_fix = float(r['Deposits'] or 0.0)
+                            withdrawals_fix = float(r['Withdrawals'] or 0.0)
+                            start_bal_fix = float(r['Start_Year_Balance'] or 0.0)
+                            start_of_year_fix = start_bal_fix + deposits_fix
+                            net_gain_fix = end_bal_fix - start_bal_fix - deposits_fix + withdrawals_fix
+                            roi_fix = float(net_gain_fix / start_of_year_fix * 100) if start_of_year_fix > 0 else None
+                            annual_df.at[i, 'End_Value'] = float(end_bal_fix)
+                            annual_df.at[i, 'Start_of_Year'] = float(start_of_year_fix)
+                            annual_df.at[i, 'Net_Gain'] = float(net_gain_fix)
+                            annual_df.at[i, 'ROI %'] = roi_fix
                     if 'Start_of_Year' not in annual_df.columns and 'Start_Year_Balance' in annual_df.columns:
                         annual_df['Start_of_Year'] = pd.to_numeric(annual_df['Start_Year_Balance'], errors='coerce').fillna(0.0) + pd.to_numeric(annual_df['Deposits'], errors='coerce').fillna(0.0)
                     total_gain = float(annual_df['Net_Gain'].sum() or 0.0)
