@@ -717,9 +717,8 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
     colors = [COA_COLORS['primary_blue'] if (g or 0) >= 0 else COA_COLORS['primary_purple'] for g in gains]
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        y=years,
-        x=gains,
-        orientation='h',
+        x=years,
+        y=gains,
         marker_color=colors,
         text=[f"${g:,.0f}" for g in gains],
         textposition='outside',
@@ -727,17 +726,17 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
     ))
     fig.update_layout(
         title=title,
-        xaxis_title='Net Gain (USD)',
-        yaxis_title='Year',
-        xaxis_tickformat='$,.0f',
-        yaxis_categoryorder='category ascending',
+        xaxis_title='Year',
+        yaxis_title='Net Gain (USD)',
+        yaxis_tickformat='$,.0f',
+        xaxis_categoryorder='category ascending',
         plot_bgcolor='#1a1a1a',
         paper_bgcolor='#1a1a1a',
         font=dict(color='#e2e8f0'),
         height=420
     )
-    fig.update_xaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
-    fig.update_yaxes(gridcolor='rgba(226,232,240,0.15)')
+    fig.update_xaxes(gridcolor='rgba(226,232,240,0.15)')
+    fig.update_yaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
     fig.update_traces(textfont_color='#e2e8f0')
     st.plotly_chart(fig, use_container_width=True)
 
@@ -760,20 +759,20 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
         gains_map = {int(r['Year']): float(r['Net_Gain'] or 0.0) for _, r in df.iterrows()}
         gains = [gains_map.get(y, 0.0) for y in years_sorted]
         colors = [COA_COLORS['primary_blue'] if g >= 0 else COA_COLORS['primary_purple'] for g in gains]
-        fig.add_trace(go.Bar(y=years_sorted, x=gains, orientation='h', name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
+        fig.add_trace(go.Bar(x=years_sorted, y=gains, name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
     fig.update_layout(
         barmode='group',
         title='Annual Gains - All Investors',
-        xaxis_title='Net Gain (USD)',
-        yaxis_title='Year',
-        xaxis_tickformat='$,.0f',
+        xaxis_title='Year',
+        yaxis_title='Net Gain (USD)',
+        yaxis_tickformat='$,.0f',
         plot_bgcolor='#1a1a1a',
         paper_bgcolor='#1a1a1a',
         font=dict(color='#e2e8f0'),
         height=420
     )
-    fig.update_xaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
-    fig.update_yaxes(gridcolor='rgba(226,232,240,0.15)')
+    fig.update_xaxes(gridcolor='rgba(226,232,240,0.15)')
+    fig.update_yaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
     fig.update_traces(textfont_color='#e2e8f0')
     st.plotly_chart(fig, use_container_width=True)
 
