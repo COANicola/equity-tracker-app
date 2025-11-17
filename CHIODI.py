@@ -1084,16 +1084,18 @@ else:
                     marker_color=COA_COLORS['primary_blue']
                 )
                 fig_portfolio.update_layout(
-                    plot_bgcolor='white',
-                    paper_bgcolor='white',
-                    font=dict(color=COA_COLORS['text_primary']),
+                    plot_bgcolor='#1a1a1a',
+                    paper_bgcolor='#1a1a1a',
+                    font=dict(color='#e2e8f0'),
                     title_font_size=16,
                     title_font_color=COA_COLORS['primary_purple'],
-                    height=400,
+                    height=420,
                     hovermode='x unified',
                     xaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False),
-                    yaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False, tickformat=',.0f')
+                    yaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False, tickformat='$,.0f')
                 )
+                fig_portfolio.update_xaxes(gridcolor='rgba(226,232,240,0.15)')
+                fig_portfolio.update_yaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
                 st.plotly_chart(fig_portfolio, use_container_width=True)
             else:
                 st.info("No historical data available yet")
@@ -1244,7 +1246,7 @@ else:
                             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">{best_year}</span>
                                 <span style="display:inline-flex; gap:8px; align-items:center;">
-                                    <span style="font-size:1.6rem; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</span>
+                                    <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</span>
                                     <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">{(best_roi or 0):+.1f}%</span>
                                 </span>
                             </div>
@@ -1257,7 +1259,7 @@ else:
                             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">{worst_year}</span>
                                 <span style="display:inline-flex; gap:8px; align-items:center;">
-                                    <span style="font-size:1.6rem; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</span>
+                                    <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</span>
                                     <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">{(worst_roi or 0):+.1f}%</span>
                                 </span>
                             </div>
