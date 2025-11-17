@@ -1364,15 +1364,26 @@ else:
                 annual_df = calculate_annual_performance(selected_investor, all_events_df, total_history)
                 display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
                 if annual_df is not None and not annual_df.empty:
-                    if total_history is not None and not total_history.empty and selected_investor in total_history.columns:
+                    inv_norm = selected_investor.strip().lower()
+                    th_cols_norm = {str(c).strip().lower(): c for c in total_history.columns if c not in ['date','total']} if (total_history is not None and not total_history.empty) else {}
+                    th_col = th_cols_norm.get(inv_norm)
+                    if total_history is not None and not total_history.empty and th_col is not None:
                         ph_fix = total_history.copy()
                         ph_fix['date'] = pd.to_datetime(ph_fix['date']).dt.date
                         for i, r in annual_df.iterrows():
                             y = int(r['Year'])
                             end_dt = datetime.date(y, 12, 31)
                             upto_end = ph_fix[ph_fix['date'] <= end_dt]
-                            end_bal_fix = float(upto_end[selected_investor].iloc[-1]) if not upto_end.empty else float(r.get('End_Value', 0.0) or 0.0)
-                            year_mask = (pd.to_datetime(all_events_df['date']).dt.year == y) & (all_events_df['investor'] == selected_investor)
+                            if not upto_end.empty:
+                                end_bal_fix = float(upto_end[th_col].iloc[-1])
+                            else:
+                                events_upto_end = all_events_df[pd.to_datetime(all_events_df['date']).dt.date <= end_dt]
+                                end_balances, _ = replay_events(events_upto_end)
+                                kb_map = {str(k).strip().lower(): k for k in end_balances.keys()}
+                                end_bal_fix = float(end_balances.get(kb_map.get(inv_norm, selected_investor), 0.0))
+                            ev = all_events_df.copy()
+                            ev['__inv_norm__'] = ev['investor'].astype(str).str.strip().str.lower()
+                            year_mask = (pd.to_datetime(ev['date']).dt.year == y) & (ev['__inv_norm__'] == inv_norm)
                             deposits_fix = float(all_events_df[year_mask & (all_events_df['type'] == 'deposit')]['usd_amount'].sum() or 0.0)
                             withdrawals_fix = float(all_events_df[year_mask & (all_events_df['type'] == 'withdrawal')]['usd_amount'].sum() or 0.0)
                             start_bal_fix = float(r['Start_Year_Balance'] or 0.0)
@@ -1475,15 +1486,26 @@ else:
                 annual_df = calculate_annual_performance(user_investor_name, all_events_df, total_history)
                 display_annual_chart(annual_df, 'La Tua Performance')
                 if annual_df is not None and not annual_df.empty:
-                    if total_history is not None and not total_history.empty and user_investor_name in total_history.columns:
+                    inv_norm_u = user_investor_name.strip().lower() if user_investor_name else ''
+                    th_cols_norm_u = {str(c).strip().lower(): c for c in total_history.columns if c not in ['date','total']} if (total_history is not None and not total_history.empty) else {}
+                    th_col_u = th_cols_norm_u.get(inv_norm_u)
+                    if total_history is not None and not total_history.empty and th_col_u is not None:
                         ph_fix = total_history.copy()
                         ph_fix['date'] = pd.to_datetime(ph_fix['date']).dt.date
                         for i, r in annual_df.iterrows():
                             y = int(r['Year'])
                             end_dt = datetime.date(y, 12, 31)
                             upto_end = ph_fix[ph_fix['date'] <= end_dt]
-                            end_bal_fix = float(upto_end[user_investor_name].iloc[-1]) if not upto_end.empty else float(r.get('End_Value', 0.0) or 0.0)
-                            year_mask = (pd.to_datetime(all_events_df['date']).dt.year == y) & (all_events_df['investor'] == user_investor_name)
+                            if not upto_end.empty:
+                                end_bal_fix = float(upto_end[th_col_u].iloc[-1])
+                            else:
+                                events_upto_end = all_events_df[pd.to_datetime(all_events_df['date']).dt.date <= end_dt]
+                                end_balances, _ = replay_events(events_upto_end)
+                                kb_map = {str(k).strip().lower(): k for k in end_balances.keys()}
+                                end_bal_fix = float(end_balances.get(kb_map.get(inv_norm_u, user_investor_name), 0.0))
+                            ev = all_events_df.copy()
+                            ev['__inv_norm__'] = ev['investor'].astype(str).str.strip().str.lower()
+                            year_mask = (pd.to_datetime(ev['date']).dt.year == y) & (ev['__inv_norm__'] == inv_norm_u)
                             deposits_fix = float(all_events_df[year_mask & (all_events_df['type'] == 'deposit')]['usd_amount'].sum() or 0.0)
                             withdrawals_fix = float(all_events_df[year_mask & (all_events_df['type'] == 'withdrawal')]['usd_amount'].sum() or 0.0)
                             start_bal_fix = float(r['Start_Year_Balance'] or 0.0)
