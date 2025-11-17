@@ -724,7 +724,7 @@ def generate_annual_report(year: int, strategy_id: int = None):
 
 # ---------- Investor Annual Performance ----------
 @st.cache_data(show_spinner=False, ttl=3600)
-def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame) -> pd.DataFrame:
+def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame, portfolio_history_df: pd.DataFrame = None) -> pd.DataFrame:
     if not investor_name or all_events_df is None or all_events_df.empty:
         return pd.DataFrame()
     inv_deposits = all_events_df[(all_events_df['investor'] == investor_name) & (all_events_df['type'] == 'deposit')]
@@ -738,22 +738,33 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
         end_date = datetime.date(year, 12, 31)
         if end_date > datetime.date.today():
             end_date = datetime.date.today()
-        events_upto_start = all_events_df[all_events_df['date'] <= start_date]
-        start_balances, _ = replay_events(events_upto_start)
-        start_balance = float(start_balances.get(investor_name, 0.0))
+        if portfolio_history_df is not None and not portfolio_history_df.empty and investor_name in portfolio_history_df.columns:
+            ph = portfolio_history_df.copy()
+            ph['date'] = pd.to_datetime(ph['date']).dt.date
+            before_start = ph[ph['date'] < start_date]
+            start_balance = float(before_start[investor_name].iloc[-1]) if not before_start.empty else 0.0
+        else:
+            events_upto_start = all_events_df[all_events_df['date'] < start_date]
+            start_balances, _ = replay_events(events_upto_start)
+            start_balance = float(start_balances.get(investor_name, 0.0))
         year_events = all_events_df[(all_events_df['date'] >= start_date) & (all_events_df['date'] <= end_date)]
         deposits = year_events[(year_events['investor'] == investor_name) & (year_events['type'] == 'deposit')]['usd_amount'].sum()
         withdrawals = year_events[(year_events['investor'] == investor_name) & (year_events['type'] == 'withdrawal')]['usd_amount'].sum()
-        events_upto_end = all_events_df[all_events_df['date'] <= end_date]
-        end_balances, _ = replay_events(events_upto_end)
-        end_balance = float(end_balances.get(investor_name, 0.0))
+        if portfolio_history_df is not None and not portfolio_history_df.empty and investor_name in portfolio_history_df.columns:
+            ph = portfolio_history_df.copy()
+            ph['date'] = pd.to_datetime(ph['date']).dt.date
+            upto_end = ph[ph['date'] <= end_date]
+            end_balance = float(upto_end[investor_name].iloc[-1]) if not upto_end.empty else start_balance
+        else:
+            events_upto_end = all_events_df[all_events_df['date'] <= end_date]
+            end_balances, _ = replay_events(events_upto_end)
+            end_balance = float(end_balances.get(investor_name, 0.0))
         net_gain = end_balance - start_balance - float(deposits or 0.0) + float(withdrawals or 0.0)
-        denom = float(start_balance) + float(deposits or 0.0)
-        roi_pct = (net_gain / denom * 100) if denom > 0 else None
+        roi_pct = (net_gain / float(start_balance) * 100) if float(start_balance) > 0 else None
         records.append({
             'Year': year,
             'Start_Value': start_balance,
-            'Start_Year_Balance': denom,
+            'Start_Year_Balance': float(start_balance),
             'End_Value': end_balance,
             'Deposits': float(deposits or 0.0),
             'Withdrawals': float(withdrawals or 0.0),
@@ -797,13 +808,13 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
     fig.update_traces(textfont_color='#e2e8f0')
     st.plotly_chart(fig, use_container_width=True)
 
-def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataFrame):
+def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataFrame, portfolio_history_df: pd.DataFrame = None):
     if not investors:
         return
     per_inv = {}
     all_years = set()
     for inv in investors:
-        df = calculate_annual_performance(inv, all_events_df)
+        df = calculate_annual_performance(inv, all_events_df, portfolio_history_df)
         if df is not None and not df.empty:
             per_inv[inv] = df[['Year', 'Net_Gain']].copy()
             for y in df['Year'].tolist():
@@ -1211,13 +1222,13 @@ else:
                 base_map = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
                 default_colors = [COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], COA_COLORS['light_purple'], COA_COLORS['light_blue']]
                 color_map = {name: base_map.get(name, default_colors[i % len(default_colors)]) for i, name in enumerate(alloc_names)}
-                fig_strategies = px.pie(
-                    names=alloc_names,
+                fig_strategies = go.Figure(data=[go.Pie(
+                    labels=alloc_names,
                     values=alloc_values,
-                    title='Allocazione Protocollo',
-                    color_discrete_map=color_map
-                )
+                    marker=dict(colors=[color_map.get(n, COA_COLORS['primary_purple']) for n in alloc_names])
+                )])
                 fig_strategies.update_layout(
+                    title='Allocazione Protocollo',
                     height=400,
                     plot_bgcolor='#1a1a1a',
                     paper_bgcolor='#1a1a1a',
@@ -1315,10 +1326,10 @@ else:
             options = ['All Investors'] + investors_to_show
             selected_investor = st.selectbox('Select Investor for Annual View', options)
             if selected_investor == 'All Investors':
-                display_multi_investor_annual_chart(investors_to_show, all_events_df)
+                display_multi_investor_annual_chart(investors_to_show, all_events_df, total_history)
                 combined_rows = []
                 for inv in investors_to_show:
-                    df = calculate_annual_performance(inv, all_events_df)
+                    df = calculate_annual_performance(inv, all_events_df, total_history)
                     if df is not None and not df.empty:
                         sub = df[['Year','Deposits','Withdrawals','End_Value']].copy()
                         sub.rename(columns={'End_Value': 'Year_End_Value'}, inplace=True)
@@ -1333,7 +1344,7 @@ else:
                         hide_index=True
                     )
             else:
-                annual_df = calculate_annual_performance(selected_investor, all_events_df)
+                annual_df = calculate_annual_performance(selected_investor, all_events_df, total_history)
                 display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
                 if annual_df is not None and not annual_df.empty:
                     gains_series = annual_df['Net_Gain']
@@ -1417,7 +1428,7 @@ else:
         else:
             if user_investor_name:
                 st.subheader('📈 Il Tuo Storico Annuale')
-                annual_df = calculate_annual_performance(user_investor_name, all_events_df)
+                annual_df = calculate_annual_performance(user_investor_name, all_events_df, total_history)
                 display_annual_chart(annual_df, 'La Tua Performance')
                 if annual_df is not None and not annual_df.empty:
                     total_gain = float(annual_df['Net_Gain'].sum() or 0.0)
