@@ -779,7 +779,7 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
     if annual_df is None or annual_df.empty:
         return
     years = [str(int(y)) for y in annual_df['Year'].tolist()]
-    gains = annual_df['Net_Gain'].tolist()
+    gains = [float(g) if pd.notna(g) else 0.0 for g in annual_df['Net_Gain'].tolist()]
     rois = [float(r) if pd.notna(r) else 0.0 for r in annual_df['ROI %'].tolist()] if 'ROI %' in annual_df.columns else [0.0 for _ in gains]
     colors = [COA_COLORS['primary_blue'] if (g or 0) >= 0 else COA_COLORS['primary_purple'] for g in gains]
     fig = go.Figure()
@@ -827,7 +827,7 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
     years_sorted_str = [str(int(y)) for y in years_sorted]
     fig = go.Figure()
     for inv, df in per_inv.items():
-        gains_map = {int(r['Year']): float(r['Net_Gain'] or 0.0) for _, r in df.iterrows()}
+        gains_map = {int(r['Year']): (float(r['Net_Gain']) if pd.notna(r['Net_Gain']) else 0.0) for _, r in df.iterrows()}
         gains = [gains_map.get(y, 0.0) for y in years_sorted]
         colors = [COA_COLORS['primary_blue'] if g >= 0 else COA_COLORS['primary_purple'] for g in gains]
         fig.add_trace(go.Bar(x=years_sorted_str, y=gains, name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
@@ -1349,7 +1349,7 @@ else:
                 annual_df = calculate_annual_performance(selected_investor, all_events_df, total_history)
                 display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
                 if annual_df is not None and not annual_df.empty:
-                    gains_series = annual_df['Net_Gain']
+                    gains_series = pd.to_numeric(annual_df['Net_Gain'], errors='coerce').fillna(0.0)
                     best_idx = int(gains_series.idxmax())
                     worst_idx = int(gains_series.idxmin())
                     best_year = int(annual_df.loc[best_idx, 'Year'])
