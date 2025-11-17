@@ -712,7 +712,7 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
 def display_annual_chart(annual_df: pd.DataFrame, title: str):
     if annual_df is None or annual_df.empty:
         return
-    years = annual_df['Year'].tolist()
+    years = [str(int(y)) for y in annual_df['Year'].tolist()]
     gains = annual_df['Net_Gain'].tolist()
     colors = [COA_COLORS['primary_blue'] if (g or 0) >= 0 else COA_COLORS['primary_purple'] for g in gains]
     fig = go.Figure()
@@ -729,6 +729,7 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
         xaxis_title='Year',
         yaxis_title='Net Gain (USD)',
         yaxis_tickformat='$,.0f',
+        xaxis_type='category',
         xaxis_categoryorder='category ascending',
         plot_bgcolor='#1a1a1a',
         paper_bgcolor='#1a1a1a',
@@ -754,18 +755,20 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
     if not per_inv:
         return
     years_sorted = sorted(list(all_years))
+    years_sorted_str = [str(int(y)) for y in years_sorted]
     fig = go.Figure()
     for inv, df in per_inv.items():
         gains_map = {int(r['Year']): float(r['Net_Gain'] or 0.0) for _, r in df.iterrows()}
         gains = [gains_map.get(y, 0.0) for y in years_sorted]
         colors = [COA_COLORS['primary_blue'] if g >= 0 else COA_COLORS['primary_purple'] for g in gains]
-        fig.add_trace(go.Bar(x=years_sorted, y=gains, name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
+        fig.add_trace(go.Bar(x=years_sorted_str, y=gains, name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
     fig.update_layout(
         barmode='group',
         title='Annual Gains - All Investors',
         xaxis_title='Year',
         yaxis_title='Net Gain (USD)',
         yaxis_tickformat='$,.0f',
+        xaxis_type='category',
         plot_bgcolor='#1a1a1a',
         paper_bgcolor='#1a1a1a',
         font=dict(color='#e2e8f0'),
@@ -1000,7 +1003,7 @@ else:
         st.markdown(f"""
         <div class="metric-card">
             <div class="metric-label">Overall ROI</div>
-            <div class="metric-value" style="color: {'#38A169' if overall_roi >= 0 else '#E53E3E'}">
+            <div class="metric-value" style="color: {COA_COLORS['primary_blue'] if overall_roi >= 0 else COA_COLORS['primary_purple']}">
                 {overall_roi:+.2f}%
             </div>
         </div>
@@ -1168,16 +1171,16 @@ else:
             
             # Color coding for ROI
             def roi_color(val):
-                if pd.isna(val) or val == 0:
-                    return 'background-color: #FEF3C7; color: black;'
-                elif val > 0:
-                    intensity = min(abs(val) / 50, 1)
-                    green_intensity = int(255 * (1 - intensity * 0.5))
-                    return f'background-color: rgb({int(255 * (1 - intensity))}, {green_intensity}, {int(255 * (1 - intensity))}); color: black; font-weight: 600;'
+                if pd.isna(val):
+                    return 'background-color: rgba(160,174,192,0.15); color: var(--text-primary);'
+                intensity = min(abs(float(val)) / 50.0, 1.0)
+                alpha = 0.18 + 0.32 * intensity
+                if float(val) > 0:
+                    return f'background-color: rgba(30,140,200,{alpha}); color: white; font-weight: 600;'
+                elif float(val) < 0:
+                    return f'background-color: rgba(122,46,143,{alpha}); color: white; font-weight: 600;'
                 else:
-                    intensity = min(abs(val) / 50, 1)
-                    red_intensity = int(255 * (1 - intensity * 0.5))
-                    return f'background-color: rgb({red_intensity}, {int(255 * (1 - intensity))}, {int(255 * (1 - intensity))}); color: black; font-weight: 600;'
+                    return 'background-color: rgba(160,174,192,0.15); color: var(--text-primary);'
             
             styled_df = df_inv.style.format({
                 'EUR Invested': '€{:,.2f}',
@@ -1197,6 +1200,21 @@ else:
             selected_investor = st.selectbox('Select Investor for Annual View', options)
             if selected_investor == 'All Investors':
                 display_multi_investor_annual_chart(investors_to_show, all_events_df)
+                combined_rows = []
+                for inv in investors_to_show:
+                    df = calculate_annual_performance(inv, all_events_df)
+                    if df is not None and not df.empty:
+                        sub = df[['Year','Deposits','Withdrawals']].copy()
+                        sub['Investor'] = inv
+                        combined_rows.append(sub)
+                if combined_rows:
+                    combined = pd.concat(combined_rows).sort_values(['Investor','Year'])
+                    st.subheader('💰 Annual Investment Flows (All Investors)')
+                    st.dataframe(
+                        combined.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}'}),
+                        use_container_width=True,
+                        hide_index=True
+                    )
             else:
                 annual_df = calculate_annual_performance(selected_investor, all_events_df)
                 display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
@@ -1206,8 +1224,10 @@ else:
                     worst_idx = int(gains_series.idxmin())
                     best_year = int(annual_df.loc[best_idx, 'Year'])
                     best_gain = float(annual_df.loc[best_idx, 'Net_Gain'] or 0.0)
+                    best_roi = annual_df.loc[best_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
                     worst_year = int(annual_df.loc[worst_idx, 'Year'])
                     worst_gain = float(annual_df.loc[worst_idx, 'Net_Gain'] or 0.0)
+                    worst_roi = annual_df.loc[worst_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
                     best_color = COA_COLORS['primary_blue'] if best_gain >= 0 else COA_COLORS['primary_purple']
                     worst_color = COA_COLORS['primary_blue'] if worst_gain >= 0 else COA_COLORS['primary_purple']
                     colm1, colm2, colm3, colm4 = st.columns(4)
@@ -1216,7 +1236,10 @@ else:
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
                             <div style="font-size:1.6rem; color: var(--text-primary);">{best_year}</div>
-                            <div style="margin-top:0.3rem; display:inline-block; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</div>
+                            <div style="margin-top:0.3rem; display:inline-flex; gap:8px; align-items:center;">
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">{(best_roi or 0):+.1f}%</span>
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
                     with colm2:
@@ -1224,25 +1247,48 @@ else:
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
                             <div style="font-size:1.6rem; color: var(--text-primary);">{worst_year}</div>
-                            <div style="margin-top:0.3rem; display:inline-block; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</div>
+                            <div style="margin-top:0.3rem; display:inline-flex; gap:8px; align-items:center;">
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">{(worst_roi or 0):+.1f}%</span>
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
                     with colm3:
                         avg_gain = float(gains_series.mean() or 0.0)
+                        avg_roi = float(pd.Series(annual_df['ROI %']).dropna().mean() or 0.0)
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Avg Annual</div>
-                            <div style="font-size:1.6rem; color: var(--text-primary);">${avg_gain:,.0f}</div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <span style="font-size:1.6rem; color: var(--text-primary);">${avg_gain:,.0f}</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if avg_roi >= 0 else COA_COLORS['primary_purple']}; color:white;">{avg_roi:+.1f}%</span>
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
                     with colm4:
                         total_gain = float(gains_series.sum() or 0.0)
+                        inv_deposits = all_events_df[(all_events_df['investor'] == selected_investor) & (all_events_df['type'] == 'deposit')]['usd_amount'].sum()
+                        inv_withdrawals = all_events_df[(all_events_df['investor'] == selected_investor) & (all_events_df['type'] == 'withdrawal')]['usd_amount'].sum()
+                        current_value = float(replay_events(all_events_df)[0].get(selected_investor, 0.0))
+                        total_roi = ((current_value + inv_withdrawals - inv_deposits) / inv_deposits * 100) if inv_deposits > 0 else 0.0
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Total Gain</div>
-                            <div style="font-size:1.6rem; color: var(--text-primary);">${total_gain:,.0f}</div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <span style="font-size:1.6rem; color: var(--text-primary);">${total_gain:,.0f}</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if total_roi >= 0 else COA_COLORS['primary_purple']}; color:white;">{total_roi:+.1f}%</span>
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
+                    st.subheader('💰 Annual Investment Flows')
+                    flows_df = annual_df[['Year','Deposits','Withdrawals']].copy()
+                    flows_df['Net_Flow'] = flows_df['Deposits'] - flows_df['Withdrawals']
+                    flows_df['Year'] = flows_df['Year'].astype(int)
+                    st.dataframe(
+                        flows_df.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}'}),
+                        use_container_width=True,
+                        hide_index=True
+                    )
         else:
             if user_investor_name:
                 st.subheader('📈 Il Tuo Storico Annuale')
@@ -1255,6 +1301,15 @@ else:
                     current_value = float(total_balances.get(user_investor_name, 0.0))
                     total_roi = ((current_value + total_withdrawn - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0.0
                     st.metric('Guadagno Totale dal Primo Investimento', f"${total_gain:,.0f}", f"{total_roi:+.1f}%")
+                    st.subheader('💰 I Tuoi Flussi Annuali')
+                    flows_df = annual_df[['Year','Deposits','Withdrawals']].copy()
+                    flows_df['Net_Flow'] = flows_df['Deposits'] - flows_df['Withdrawals']
+                    flows_df['Year'] = flows_df['Year'].astype(int)
+                    st.dataframe(
+                        flows_df.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}'}),
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
     # Event Management Tab (Admin Only)
     if current_role == 'admin':
