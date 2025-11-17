@@ -697,7 +697,8 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
         end_balances, _ = replay_events(events_upto_end)
         end_balance = float(end_balances.get(investor_name, 0.0))
         net_gain = end_balance - start_balance - float(deposits or 0.0) + float(withdrawals or 0.0)
-        roi_pct = (net_gain / start_balance * 100) if start_balance > 0 else None
+        denom = float(start_balance) + float(deposits or 0.0)
+        roi_pct = (net_gain / denom * 100) if denom > 0 else None
         records.append({
             'Year': year,
             'Start_Value': start_balance,
@@ -1204,14 +1205,15 @@ else:
                 for inv in investors_to_show:
                     df = calculate_annual_performance(inv, all_events_df)
                     if df is not None and not df.empty:
-                        sub = df[['Year','Deposits','Withdrawals']].copy()
+                        sub = df[['Year','Deposits','Withdrawals','End_Value']].copy()
+                        sub.rename(columns={'End_Value': 'Year_End_Value'}, inplace=True)
                         sub['Investor'] = inv
                         combined_rows.append(sub)
                 if combined_rows:
                     combined = pd.concat(combined_rows).sort_values(['Investor','Year'])
                     st.subheader('💰 Annual Investment Flows (All Investors)')
                     st.dataframe(
-                        combined.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}'}),
+                        combined.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}'}),
                         use_container_width=True,
                         hide_index=True
                     )
@@ -1255,7 +1257,11 @@ else:
                         """, unsafe_allow_html=True)
                     with colm3:
                         avg_gain = float(gains_series.mean() or 0.0)
-                        avg_roi = float(pd.Series(annual_df['ROI %']).dropna().mean() or 0.0)
+                        final_end_value = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
+                        total_deposits_all = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
+                        total_roi_pct = ((final_end_value - total_deposits_all) / total_deposits_all * 100) if total_deposits_all > 0 else 0.0
+                        years_count = int(pd.Series(annual_df['Year']).nunique()) if 'Year' in annual_df.columns else len(annual_df)
+                        avg_roi = float(total_roi_pct / years_count) if years_count > 0 else 0.0
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Avg Annual</div>
@@ -1267,10 +1273,9 @@ else:
                         """, unsafe_allow_html=True)
                     with colm4:
                         total_gain = float(gains_series.sum() or 0.0)
-                        inv_deposits = all_events_df[(all_events_df['investor'] == selected_investor) & (all_events_df['type'] == 'deposit')]['usd_amount'].sum()
-                        inv_withdrawals = all_events_df[(all_events_df['investor'] == selected_investor) & (all_events_df['type'] == 'withdrawal')]['usd_amount'].sum()
-                        current_value = float(replay_events(all_events_df)[0].get(selected_investor, 0.0))
-                        total_roi = ((current_value + inv_withdrawals - inv_deposits) / inv_deposits * 100) if inv_deposits > 0 else 0.0
+                        final_end_value = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
+                        total_deposits_all = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
+                        total_roi = ((final_end_value - total_deposits_all) / total_deposits_all * 100) if total_deposits_all > 0 else 0.0
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Total Gain</div>
@@ -1281,8 +1286,9 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
                     st.subheader('💰 Annual Investment Flows')
-                    flows_df = annual_df[['Year','Deposits','Withdrawals']].copy()
-                    flows_df['Net_Flow'] = flows_df['Deposits'] - flows_df['Withdrawals']
+                    flows_df = annual_df[['Year','Deposits','Withdrawals','End_Value']].copy()
+                    flows_df['Net_Flow'] = flows_df['End_Value']
+                    flows_df = flows_df.drop(columns=['End_Value'])
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     st.dataframe(
                         flows_df.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}'}),
@@ -1302,8 +1308,9 @@ else:
                     total_roi = ((current_value + total_withdrawn - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0.0
                     st.metric('Guadagno Totale dal Primo Investimento', f"${total_gain:,.0f}", f"{total_roi:+.1f}%")
                     st.subheader('💰 I Tuoi Flussi Annuali')
-                    flows_df = annual_df[['Year','Deposits','Withdrawals']].copy()
-                    flows_df['Net_Flow'] = flows_df['Deposits'] - flows_df['Withdrawals']
+                    flows_df = annual_df[['Year','Deposits','Withdrawals','End_Value']].copy()
+                    flows_df['Net_Flow'] = flows_df['End_Value']
+                    flows_df = flows_df.drop(columns=['End_Value'])
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     st.dataframe(
                         flows_df.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}'}),
