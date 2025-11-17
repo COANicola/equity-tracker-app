@@ -566,7 +566,7 @@ def replay_events(events_df: pd.DataFrame, strategy_id: int = None):
     
     history_df = pd.DataFrame(history_rows) if history_rows else pd.DataFrame()
     if not history_df.empty: history_df = history_df.drop_duplicates(subset='date', keep='last')
-        return investor_balances, history_df
+    return investor_balances, history_df
 
 def compute_aggregated_portfolio_history(all_events_df: pd.DataFrame, strategy_data: dict):
     if not strategy_data:
