@@ -818,7 +818,16 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
     for inv in investors:
         df = calculate_annual_performance(inv, all_events_df, portfolio_history_df)
         if df is not None and not df.empty:
-            per_inv[inv] = df[['Year', 'Net_Gain']].copy()
+            if 'Start_of_Year' not in df.columns and 'Start_Year_Balance' in df.columns:
+                df['Start_of_Year'] = pd.to_numeric(df['Start_Year_Balance'], errors='coerce').fillna(0.0) + pd.to_numeric(df['Deposits'], errors='coerce').fillna(0.0)
+            # Recompute Net_Gain defensively to avoid cache inconsistencies
+            df['__NG_FIX__'] = (
+                pd.to_numeric(df['End_Value'], errors='coerce').fillna(0.0)
+                - pd.to_numeric(df['Start_Year_Balance'], errors='coerce').fillna(0.0)
+                - pd.to_numeric(df['Deposits'], errors='coerce').fillna(0.0)
+                + pd.to_numeric(df['Withdrawals'], errors='coerce').fillna(0.0)
+            )
+            per_inv[inv] = df[['Year', '__NG_FIX__']].rename(columns={'__NG_FIX__': 'Net_Gain'}).copy()
             for y in df['Year'].tolist():
                 all_years.add(int(y))
     if not per_inv:
