@@ -759,12 +759,14 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
             events_upto_end = all_events_df[all_events_df['date'] <= end_date]
             end_balances, _ = replay_events(events_upto_end)
             end_balance = float(end_balances.get(investor_name, 0.0))
+        start_of_year = float(start_balance) + float(deposits or 0.0)
         net_gain = end_balance - start_balance - float(deposits or 0.0) + float(withdrawals or 0.0)
-        roi_pct = (net_gain / float(start_balance) * 100) if float(start_balance) > 0 else None
+        roi_pct = (net_gain / float(start_of_year) * 100) if float(start_of_year) > 0 else None
         records.append({
             'Year': year,
             'Start_Value': start_balance,
             'Start_Year_Balance': float(start_balance),
+            'Start_of_Year': float(start_of_year),
             'End_Value': end_balance,
             'Deposits': float(deposits or 0.0),
             'Withdrawals': float(withdrawals or 0.0),
@@ -1352,10 +1354,12 @@ else:
                     worst_idx = int(gains_series.idxmin())
                     best_year = int(annual_df.loc[best_idx, 'Year'])
                     best_gain = float(annual_df.loc[best_idx, 'Net_Gain'] or 0.0)
-                    best_roi = annual_df.loc[best_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
+                    best_roi_val = annual_df.loc[best_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
+                    best_roi = float(best_roi_val) if (best_roi_val is not None and pd.notna(best_roi_val)) else 0.0
                     worst_year = int(annual_df.loc[worst_idx, 'Year'])
                     worst_gain = float(annual_df.loc[worst_idx, 'Net_Gain'] or 0.0)
-                    worst_roi = annual_df.loc[worst_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
+                    worst_roi_val = annual_df.loc[worst_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
+                    worst_roi = float(worst_roi_val) if (worst_roi_val is not None and pd.notna(worst_roi_val)) else 0.0
                     best_color = COA_COLORS['primary_blue'] if best_gain >= 0 else COA_COLORS['primary_purple']
                     worst_color = COA_COLORS['primary_blue'] if worst_gain >= 0 else COA_COLORS['primary_purple']
                     colm1, colm2, colm3, colm4 = st.columns(4)
@@ -1416,8 +1420,9 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
                     st.subheader('💰 Annual Investment Flows')
-                    flows_df = annual_df[['Year','Start_Year_Balance','Deposits','Withdrawals','End_Value','ROI %']].copy()
-                    flows_df.rename(columns={'End_Value': 'Year_End_Value', 'Start_Year_Balance': 'Start_of_Year'}, inplace=True)
+                    use_start_col = 'Start_of_Year' if 'Start_of_Year' in annual_df.columns else 'Start_Year_Balance'
+                    flows_df = annual_df[['Year','Deposits',use_start_col,'Withdrawals','End_Value','ROI %']].copy()
+                    flows_df.rename(columns={'End_Value': 'Year_End_Value', use_start_col: 'Start_of_Year'}, inplace=True)
                     flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     st.dataframe(
@@ -1437,8 +1442,9 @@ else:
                     total_roi = ((final_end_value - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0.0
                     st.metric('Guadagno Totale dal Primo Investimento', f"${total_gain:,.0f}", f"{total_roi:+.1f}%")
                     st.subheader('💰 I Tuoi Flussi Annuali')
-                    flows_df = annual_df[['Year','Start_Year_Balance','Deposits','Withdrawals','End_Value','ROI %']].copy()
-                    flows_df.rename(columns={'End_Value': 'Year_End_Value', 'Start_Year_Balance': 'Start_of_Year'}, inplace=True)
+                    use_start_col = 'Start_of_Year' if 'Start_of_Year' in annual_df.columns else 'Start_Year_Balance'
+                    flows_df = annual_df[['Year','Deposits',use_start_col,'Withdrawals','End_Value','ROI %']].copy()
+                    flows_df.rename(columns={'End_Value': 'Year_End_Value', use_start_col: 'Start_of_Year'}, inplace=True)
                     flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     st.dataframe(
