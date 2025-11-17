@@ -18,6 +18,8 @@ import time
 from contextlib import contextmanager
 import logging
 import io
+import base64
+from PIL import Image
 
 # ---------- Logging setup ----------
 logging.basicConfig(level=logging.INFO)
@@ -54,6 +56,56 @@ COA_COLORS = {
     'warning': '#D69E2E',
     'error': '#E53E3E'
 }
+
+def load_coa_logo(path: str = "COA_no sfondo_no scritta.png"):
+    try:
+        img = Image.open(path)
+        if img.mode in ("RGBA", "LA"):
+            alpha = img.split()[-1]
+            bbox = alpha.getbbox()
+            if bbox:
+                img = img.crop(bbox)
+        return img
+    except Exception as e:
+        logger.info(f"Logo load failed: {e}")
+        return None
+
+def render_logo_centered(path: str = "COA_no sfondo_no scritta.png", width_px: int = 100):
+    try:
+        img = load_coa_logo(path)
+        if img is not None:
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            data = buf.getvalue()
+        else:
+            with open(path, "rb") as f:
+                data = f.read()
+        b64 = base64.b64encode(data).decode("ascii")
+        st.markdown(
+            f"<div style='display:flex;justify-content:center'><img src='data:image/png;base64,{b64}' style='width:{width_px}px'/></div>",
+            unsafe_allow_html=True,
+        )
+    except Exception as e:
+        try:
+            st.image(path, width=width_px)
+        except Exception:
+            logger.info(f"Logo render failed: {e}")
+
+def get_logo_img_tag(path: str = "COA_no sfondo_no scritta.png", width_px: int = 140) -> str:
+    try:
+        img = load_coa_logo(path)
+        if img is not None:
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            data = buf.getvalue()
+        else:
+            with open(path, "rb") as f:
+                data = f.read()
+        b64 = base64.b64encode(data).decode("ascii")
+        return f"<img src='data:image/png;base64,{b64}' style='width:{width_px}px'/>"
+    except Exception as e:
+        logger.info(f"Logo tag failed: {e}")
+        return ""
 
 # ---------- Custom CSS for COA Branding ----------
 def apply_coa_styling():
@@ -184,11 +236,13 @@ def apply_coa_styling():
         background-color: var(--background);
     }}
     
-    /* Center all images */
+    .stImage {{
+        display: flex;
+        justify-content: center;
+    }}
     .stImage img {{
         display: block;
-        margin-left: auto;
-        margin-right: auto;
+        margin: 0 auto;
     }}
     
     /* Header styling */
@@ -411,6 +465,7 @@ def get_db_session():
         session.close()
 
 # ---------- Utility functions ----------
+@st.cache_data(show_spinner=False, ttl=3600)
 def get_historical_eurusd(date: datetime.date, retry_count: int = 3) -> float:
     ticker = 'EURUSD=X'
     for attempt in range(retry_count):
@@ -446,6 +501,30 @@ def decode_jwt(token: str):
         if payload.get('exp', 0) < int(time.time()): return None
         return payload
     except PyJWTError: return None
+
+def get_active_strategies_df() -> pd.DataFrame:
+    with get_db_session() as db:
+        return pd.read_sql(
+            db.query(Strategy).filter(Strategy.is_active == True).statement,
+            db.bind
+        )
+
+def get_protocol_options(strategies_df: pd.DataFrame, include_no: bool = False, include_all: bool = False) -> list:
+    options = []
+    if include_all:
+        options.append('All Protocols')
+    if include_no:
+        options.append('No Protocol')
+    if strategies_df is not None and not strategies_df.empty:
+        options.extend(sorted(strategies_df['name'].tolist()))
+    return options
+
+def resolve_strategy_id_by_name(strategies_df: pd.DataFrame, name: str):
+    if strategies_df is not None and not strategies_df.empty and name:
+        match = strategies_df[strategies_df['name'] == name]
+        if not match.empty:
+            return int(match['id'].iloc[0])
+    return None
 
 # ---------- Enhanced Replay Engine with Strategy Support ----------
 def replay_events(events_df: pd.DataFrame, strategy_id: int = None):
@@ -592,6 +671,101 @@ def generate_annual_report(year: int, strategy_id: int = None):
         
         return monthly_df, annual_metrics
 
+# ---------- Investor Annual Performance ----------
+@st.cache_data(show_spinner=False, ttl=3600)
+def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame) -> pd.DataFrame:
+    if not investor_name or all_events_df is None or all_events_df.empty:
+        return pd.DataFrame()
+    inv_deposits = all_events_df[(all_events_df['investor'] == investor_name) & (all_events_df['type'] == 'deposit')]
+    if inv_deposits.empty:
+        return pd.DataFrame()
+    first_year = pd.to_datetime(inv_deposits['date']).dt.year.min()
+    current_year = datetime.date.today().year
+    records = []
+    for year in range(int(first_year), int(current_year) + 1):
+        start_date = datetime.date(year, 1, 1)
+        end_date = datetime.date(year, 12, 31)
+        if end_date > datetime.date.today():
+            end_date = datetime.date.today()
+        events_upto_start = all_events_df[all_events_df['date'] <= start_date]
+        start_balances, _ = replay_events(events_upto_start)
+        start_balance = float(start_balances.get(investor_name, 0.0))
+        year_events = all_events_df[(all_events_df['date'] >= start_date) & (all_events_df['date'] <= end_date)]
+        deposits = year_events[(year_events['investor'] == investor_name) & (year_events['type'] == 'deposit')]['usd_amount'].sum()
+        withdrawals = year_events[(year_events['investor'] == investor_name) & (year_events['type'] == 'withdrawal')]['usd_amount'].sum()
+        events_upto_end = all_events_df[all_events_df['date'] <= end_date]
+        end_balances, _ = replay_events(events_upto_end)
+        end_balance = float(end_balances.get(investor_name, 0.0))
+        net_gain = end_balance - start_balance - float(deposits or 0.0) + float(withdrawals or 0.0)
+        roi_pct = (net_gain / start_balance * 100) if start_balance > 0 else None
+        records.append({
+            'Year': year,
+            'Start_Value': start_balance,
+            'End_Value': end_balance,
+            'Deposits': float(deposits or 0.0),
+            'Withdrawals': float(withdrawals or 0.0),
+            'Net_Gain': float(net_gain),
+            'ROI %': float(roi_pct) if roi_pct is not None else None
+        })
+    return pd.DataFrame(records)
+
+def display_annual_chart(annual_df: pd.DataFrame, title: str):
+    if annual_df is None or annual_df.empty:
+        return
+    years = annual_df['Year'].tolist()
+    gains = annual_df['Net_Gain'].tolist()
+    colors = [COA_COLORS['success'] if (g or 0) >= 0 else COA_COLORS['error'] for g in gains]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=years,
+        y=gains,
+        marker_color=colors,
+        text=[f"${g:,.0f}" for g in gains],
+        textposition='outside'
+    ))
+    fig.update_layout(
+        title=title,
+        xaxis_title='Year',
+        yaxis_title='Net Gain (USD)',
+        yaxis_tickformat='$,.0f',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        height=400
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataFrame):
+    if not investors:
+        return
+    per_inv = {}
+    all_years = set()
+    for inv in investors:
+        df = calculate_annual_performance(inv, all_events_df)
+        if df is not None and not df.empty:
+            per_inv[inv] = df[['Year', 'Net_Gain']].copy()
+            for y in df['Year'].tolist():
+                all_years.add(int(y))
+    if not per_inv:
+        return
+    years_sorted = sorted(list(all_years))
+    fig = go.Figure()
+    for inv, df in per_inv.items():
+        gains_map = {int(r['Year']): float(r['Net_Gain'] or 0.0) for _, r in df.iterrows()}
+        gains = [gains_map.get(y, 0.0) for y in years_sorted]
+        colors = [COA_COLORS['success'] if g >= 0 else COA_COLORS['error'] for g in gains]
+        fig.add_trace(go.Bar(x=years_sorted, y=gains, name=inv, marker_color=colors, text=[f"${g:,.0f}" for g in gains], textposition='outside'))
+    fig.update_layout(
+        barmode='group',
+        title='Annual Gains - All Investors',
+        xaxis_title='Year',
+        yaxis_title='Net Gain (USD)',
+        yaxis_tickformat='$,.0f',
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        height=420
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 # ---------- Main App ----------
 st.set_page_config(page_title='COA Equity Tracker', page_icon='📊', layout='wide')
 apply_coa_styling()
@@ -615,13 +789,13 @@ if not st.session_state.jwt:
     # Login page with COA branding
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        img_c1, img_c2, img_c3 = st.columns([1, 2, 1])
-        with img_c2:
-            try:
-                st.image("COA_no sfondo_no scritta.png", width=100)
-            except Exception as e:
-                logger.info(f"Logo display failed: {e}")
-        st.markdown("<h2 style='text-align: center; margin-top: 0.5rem; margin-bottom: 1.5rem;'>COA-Portfolio</h2>", unsafe_allow_html=True)
+        _img_tag = get_logo_img_tag(width_px=140)
+        st.markdown(f"""
+        <div style="display:flex; flex-direction:column; align-items:center;">
+            {_img_tag}
+            <h2 style="margin-top: 0.6rem; margin-bottom: 1.6rem;">COA-Portfolio</h2>
+        </div>
+        """, unsafe_allow_html=True)
         
         with st.form("login_form"):
             login_user = st.text_input('Username', placeholder='Enter your username')
@@ -665,8 +839,7 @@ with col1:
         # Add some vertical spacing to center the logo
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
         try:
-            # Try to display logo if it exists - use the actual filename
-            st.image("COA_no sfondo_no scritta.png", width=160)
+            render_logo_centered(width_px=160)
         except Exception as e:
             logger.info(f"Logo display failed: {e}")
             # Fallback to text logo
@@ -717,8 +890,7 @@ with get_db_session() as db:
     all_events_df['date'] = pd.to_datetime(all_events_df['date']).dt.date
     
     # Load strategies
-    strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-    strategies_df = pd.read_sql(db.query(Strategy).statement, db.bind)
+    strategies_df = pd.read_sql(db.query(Strategy).filter(Strategy.is_active == True).statement, db.bind)
 
  
 
@@ -736,11 +908,8 @@ if all_events_df.empty:
                 investor = st.text_input('Investor Name', placeholder='Enter investor name')
                 
             with col2:
-                # Protocol selection - reload within session to avoid DetachedInstanceError
-                with get_db_session() as db:
-                    current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
-                    protocol_options = ['No Protocol'] + [s.name for s in current_protocols]
-                    selected_protocol = st.selectbox('Protocol', protocol_options)
+                protocol_options = ['No Protocol'] + (sorted(strategies_df['name'].tolist()) if not strategies_df.empty else [])
+                selected_protocol = st.selectbox('Protocol', protocol_options)
                 
             eur_amount = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, value=1000.0)
             
@@ -749,10 +918,7 @@ if all_events_df.empty:
                 usd_amount = eur_amount * rate
                 
                 with get_db_session() as db:
-                    strategy_id = None
-                    if selected_protocol != 'No Protocol':
-                        protocol = db.query(Strategy).filter(Strategy.name == selected_protocol).first()
-                        strategy_id = protocol.id if protocol else None
+                    strategy_id = resolve_strategy_id_by_name(strategies_df, selected_protocol) if selected_protocol != 'No Protocol' else None
                     
                     db.add(Event(
                         date=d_date, 
@@ -772,7 +938,6 @@ if all_events_df.empty:
 
 else:
     # Filter events based on user role and strategy selection
-    selected_strategy_id = st.session_state.get('selected_strategy_id', None)
     
     if current_role != 'admin':
         if user_investor_name:
@@ -791,12 +956,10 @@ else:
     
     # Calculate strategy-specific data
     strategy_data = {}
-    # Reload strategies within session context to avoid DetachedInstanceError
-    with get_db_session() as db:
-        active_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-        for strategy in active_strategies:
-            strat_balances, strat_history = replay_events(all_events_df, strategy.id)
-            strategy_data[strategy.name] = {
+    if strategies_df is not None and not strategies_df.empty:
+        for _, strat in strategies_df.iterrows():
+            strat_balances, strat_history = replay_events(all_events_df, int(strat['id']))
+            strategy_data[strat['name']] = {
                 'balances': strat_balances,
                 'history': strat_history,
                 'total_value': sum(strat_balances.values())
@@ -853,24 +1016,21 @@ else:
             """, unsafe_allow_html=True)
     
     with col4:
-        # Reload strategies within session to avoid DetachedInstanceError
-        with get_db_session() as db:
-            current_strategies = db.query(Strategy).filter(Strategy.is_active == True).all()
-            if current_strategies:
-                active_strategies = len([s for s in current_strategies if s.is_active])
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">Active Strategies</div>
-                    <div class="metric-value">{active_strategies}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">Strategies</div>
-                    <div class="metric-value">None</div>
-                </div>
-                """, unsafe_allow_html=True)
+        if strategies_df is not None and not strategies_df.empty:
+            active_strategies = len(strategies_df)
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Active Strategies</div>
+                <div class="metric-value">{active_strategies}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Strategies</div>
+                <div class="metric-value">None</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     st.divider()
 
@@ -948,12 +1108,6 @@ else:
                     st.plotly_chart(fig_investor_value, use_container_width=True)
         else: 
             st.subheader("📈 Your Value Trend (USD)")
-            user_investor_name = None
-            with get_db_session() as db:
-                user = db.query(User).filter(User.username == current_user).first()
-                if user and user.investor_name:
-                    user_investor_name = user.investor_name
-            
             if user_investor_name and user_investor_name in total_history.columns:
                 user_history_df = total_history[['date', user_investor_name]].copy()
                 user_history_df.rename(columns={user_investor_name: 'Your Value (USD)'}, inplace=True)
@@ -1026,6 +1180,44 @@ else:
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
+        st.divider()
+        if current_role == 'admin':
+            st.subheader('📈 Annual Performance History')
+            options = ['All Investors'] + investors_to_show
+            selected_investor = st.selectbox('Select Investor for Annual View', options)
+            if selected_investor == 'All Investors':
+                display_multi_investor_annual_chart(investors_to_show, all_events_df)
+            else:
+                annual_df = calculate_annual_performance(selected_investor, all_events_df)
+                display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
+                if annual_df is not None and not annual_df.empty:
+                    gains_series = annual_df['Net_Gain']
+                    best_idx = int(gains_series.idxmax())
+                    worst_idx = int(gains_series.idxmin())
+                    colm1, colm2, colm3, colm4 = st.columns(4)
+                    with colm1:
+                        st.metric('Best Year', f"{int(annual_df.loc[best_idx, 'Year'])}", f"${annual_df.loc[best_idx, 'Net_Gain']:,.0f}")
+                    with colm2:
+                        st.metric('Worst Year', f"{int(annual_df.loc[worst_idx, 'Year'])}", f"${annual_df.loc[worst_idx, 'Net_Gain']:,.0f}")
+                    with colm3:
+                        avg_gain = float(gains_series.mean() or 0.0)
+                        st.metric('Avg Annual', f"${avg_gain:,.0f}")
+                    with colm4:
+                        total_gain = float(gains_series.sum() or 0.0)
+                        st.metric('Total Gain', f"${total_gain:,.0f}")
+        else:
+            if user_investor_name:
+                st.subheader('📈 Il Tuo Storico Annuale')
+                annual_df = calculate_annual_performance(user_investor_name, all_events_df)
+                display_annual_chart(annual_df, 'La Tua Performance')
+                if annual_df is not None and not annual_df.empty:
+                    total_gain = float(annual_df['Net_Gain'].sum() or 0.0)
+                    total_usd_invested = float(all_events_df[(all_events_df['investor'] == user_investor_name) & (all_events_df['type'] == 'deposit')]['usd_amount'].sum() or 0.0)
+                    total_withdrawn = float(all_events_df[(all_events_df['investor'] == user_investor_name) & (all_events_df['type'] == 'withdrawal')]['usd_amount'].sum() or 0.0)
+                    current_value = float(total_balances.get(user_investor_name, 0.0))
+                    total_roi = ((current_value + total_withdrawn - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0.0
+                    st.metric('Guadagno Totale dal Primo Investimento', f"${total_gain:,.0f}", f"{total_roi:+.1f}%")
+
     # Event Management Tab (Admin Only)
     if current_role == 'admin':
         with tabs[2] if len(tabs) > 2 else st.container():
@@ -1043,11 +1235,7 @@ else:
                         d_date = st.date_input('Date', datetime.date.today(), key='d_date')
                         d_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='d_inv')
                         
-                        # Reload protocols within session to avoid DetachedInstanceError
-                        with get_db_session() as db:
-                            current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
-                            protocol_options = ['No Protocol'] + [s.name for s in current_protocols]
-                            d_protocol = st.selectbox('Protocol', protocol_options, key='d_protocol')
+                        d_protocol = st.selectbox('Protocol', get_protocol_options(strategies_df, include_no=True), key='d_protocol')
                         
                         d_eur = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, key='d_eur')
                         
@@ -1056,10 +1244,7 @@ else:
                             usd_amount = d_eur * rate
                             
                             with get_db_session() as db:
-                                strategy_id = None
-                                if d_protocol != 'No Protocol':
-                                    protocol = db.query(Strategy).filter(Strategy.name == d_protocol).first()
-                                    strategy_id = protocol.id if protocol else None
+                                strategy_id = resolve_strategy_id_by_name(strategies_df, d_protocol) if d_protocol != 'No Protocol' else None
                                 
                                 db.add(Event(
                                     date=d_date, 
@@ -1080,11 +1265,7 @@ else:
                         w_date = st.date_input('Date', datetime.date.today(), key='w_date')
                         w_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='w_inv')
                         
-                        # Reload strategies within session to avoid DetachedInstanceError
-                        with get_db_session() as db:
-                            current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
-                            protocol_options = ['No Protocol'] + [s.name for s in current_protocols]
-                            w_protocol = st.selectbox('Protocol', protocol_options, key='w_protocol')
+                        w_protocol = st.selectbox('Protocol', get_protocol_options(strategies_df, include_no=True), key='w_protocol')
                         
                         w_usd = st.number_input('Amount (USD)', min_value=0.01, step=100.0, key='w_usd')
                         
@@ -1093,10 +1274,7 @@ else:
                             eur_amount = w_usd / rate
                             
                             with get_db_session() as db:
-                                strategy_id = None
-                                if w_protocol != 'No Protocol':
-                                    protocol = db.query(Strategy).filter(Strategy.name == w_protocol).first()
-                                    strategy_id = protocol.id if protocol else None
+                                strategy_id = resolve_strategy_id_by_name(strategies_df, w_protocol) if w_protocol != 'No Protocol' else None
                                 
                                 db.add(Event(
                                     date=w_date, 
@@ -1116,20 +1294,13 @@ else:
                     with st.form("valuation_form"):
                         v_date = st.date_input('Date', datetime.date.today(), key='v_date')
                         
-                        # Reload protocols within session to avoid DetachedInstanceError
-                        with get_db_session() as db:
-                            current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
-                            protocol_options = ['All Protocols'] + [s.name for s in current_protocols]
-                            v_protocol = st.selectbox('Protocol', protocol_options, key='v_protocol')
+                        v_protocol = st.selectbox('Protocol', get_protocol_options(strategies_df, include_all=True), key='v_protocol')
                         
                         v_total = st.number_input('Total Portfolio Value (USD)', min_value=0.01, step=1000.0, key='v_usd')
                         
                         if st.form_submit_button('📈 Add Valuation', use_container_width=True):
                             with get_db_session() as db:
-                                strategy_id = None
-                                if v_protocol != 'All Protocols':
-                                    protocol = db.query(Strategy).filter(Strategy.name == v_protocol).first()
-                                    strategy_id = protocol.id if protocol else None
+                                strategy_id = resolve_strategy_id_by_name(strategies_df, v_protocol) if v_protocol != 'All Protocols' else None
                                 
                                 db.add(Event(
                                     date=v_date, 
@@ -1165,10 +1336,6 @@ else:
                         if ev_id_to_edit:
                             ev_row = db.get(Event, ev_id_to_edit)
                             if ev_row:
-                                # Load protocols within the same session to avoid DetachedInstanceError
-                                current_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
-                                protocol_mapping = {s.name: s for s in current_protocols}
-                                
                                 with st.form(f"edit_form_{ev_row.id}"):
                                     st.markdown(f"**Edit Event #{ev_row.id} ({ev_row.type})**")
                                     
@@ -1178,13 +1345,12 @@ else:
                                         e_investor = st.text_input('Investor Name', value=ev_row.investor or "")
                                         
                                         current_protocol = 'No Protocol'
-                                        if ev_row.strategy_id:
-                                            protocol = db.query(Strategy).filter(Strategy.id == ev_row.strategy_id).first()
-                                            current_protocol = protocol.name if protocol else 'No Protocol'
-                                        
-                                        protocol_options = ['No Protocol'] + [s.name for s in current_protocols]
-                                        e_protocol = st.selectbox('Protocol', protocol_options, 
-                                                                index=protocol_options.index(current_protocol))
+                                        if ev_row.strategy_id and not strategies_df.empty:
+                                            match = strategies_df[strategies_df['id'] == ev_row.strategy_id]
+                                            if not match.empty:
+                                                current_protocol = match['name'].iloc[0]
+                                        protocol_options = get_protocol_options(strategies_df, include_no=True)
+                                        e_protocol = st.selectbox('Protocol', protocol_options, index=protocol_options.index(current_protocol))
                                     
                                     if ev_row.type == 'deposit':
                                         e_eur = st.number_input('Amount (EUR)', value=ev_row.eur_amount or 0.0)
@@ -1203,10 +1369,8 @@ else:
                                             if ev_row.type in ['deposit', 'withdrawal']:
                                                 ev_row.investor = e_investor.strip() or None
                                                 
-                                                # Update protocol
                                                 if e_protocol != 'No Protocol':
-                                                    protocol = protocol_mapping.get(e_protocol)
-                                                    ev_row.strategy_id = protocol.id if protocol else None
+                                                    ev_row.strategy_id = resolve_strategy_id_by_name(strategies_df, e_protocol)
                                                 else:
                                                     ev_row.strategy_id = None
                                             
