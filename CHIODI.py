@@ -1383,8 +1383,7 @@ else:
                             annual_df.at[i, 'Start_of_Year'] = float(start_of_year_fix)
                             annual_df.at[i, 'Net_Gain'] = float(net_gain_fix)
                             annual_df.at[i, 'ROI %'] = roi_fix
-                    if 'Start_of_Year' not in annual_df.columns and 'Start_Year_Balance' in annual_df.columns:
-                        annual_df['Start_of_Year'] = pd.to_numeric(annual_df['Start_Year_Balance'], errors='coerce').fillna(0.0) + pd.to_numeric(annual_df['Deposits'], errors='coerce').fillna(0.0)
+                    annual_df['Start_of_Year'] = pd.to_numeric(annual_df.get('Start_Year_Balance', 0.0), errors='coerce').fillna(0.0) + pd.to_numeric(annual_df.get('Deposits', 0.0), errors='coerce').fillna(0.0)
                     gains_series = pd.to_numeric(annual_df['Net_Gain'], errors='coerce').fillna(0.0)
                     best_idx = int(gains_series.idxmax())
                     worst_idx = int(gains_series.idxmin())
@@ -1456,9 +1455,8 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
                     st.subheader('💰 Annual Investment Flows')
-                    use_start_col = 'Start_of_Year' if 'Start_of_Year' in annual_df.columns else 'Start_Year_Balance'
-                    flows_df = annual_df[['Year','Deposits',use_start_col,'Withdrawals','End_Value','ROI %']].copy()
-                    flows_df.rename(columns={'End_Value': 'Year_End_Value', use_start_col: 'Start_of_Year'}, inplace=True)
+                    flows_df = annual_df[['Year','Deposits','Start_of_Year','Withdrawals','End_Value','ROI %']].copy()
+                    flows_df.rename(columns={'End_Value': 'Year_End_Value'}, inplace=True)
                     flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     fmt_cols = ['Start_of_Year','Deposits','Withdrawals','Year_End_Value','ROI %']
@@ -1493,17 +1491,15 @@ else:
                             annual_df.at[i, 'Start_of_Year'] = float(start_of_year_fix)
                             annual_df.at[i, 'Net_Gain'] = float(net_gain_fix)
                             annual_df.at[i, 'ROI %'] = roi_fix
-                    if 'Start_of_Year' not in annual_df.columns and 'Start_Year_Balance' in annual_df.columns:
-                        annual_df['Start_of_Year'] = pd.to_numeric(annual_df['Start_Year_Balance'], errors='coerce').fillna(0.0) + pd.to_numeric(annual_df['Deposits'], errors='coerce').fillna(0.0)
+                    annual_df['Start_of_Year'] = pd.to_numeric(annual_df.get('Start_Year_Balance', 0.0), errors='coerce').fillna(0.0) + pd.to_numeric(annual_df.get('Deposits', 0.0), errors='coerce').fillna(0.0)
                     total_gain = float(annual_df['Net_Gain'].sum() or 0.0)
                     final_end_value = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
                     total_usd_invested = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
                     total_roi = ((final_end_value - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0.0
                     st.metric('Guadagno Totale dal Primo Investimento', f"${total_gain:,.0f}", f"{total_roi:+.1f}%")
                     st.subheader('💰 I Tuoi Flussi Annuali')
-                    use_start_col = 'Start_of_Year' if 'Start_of_Year' in annual_df.columns else 'Start_Year_Balance'
-                    flows_df = annual_df[['Year','Deposits',use_start_col,'Withdrawals','End_Value','ROI %']].copy()
-                    flows_df.rename(columns={'End_Value': 'Year_End_Value', use_start_col: 'Start_of_Year'}, inplace=True)
+                    flows_df = annual_df[['Year','Deposits','Start_of_Year','Withdrawals','End_Value','ROI %']].copy()
+                    flows_df.rename(columns={'End_Value': 'Year_End_Value'}, inplace=True)
                     flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     fmt_cols = ['Start_of_Year','Deposits','Withdrawals','Year_End_Value','ROI %']
