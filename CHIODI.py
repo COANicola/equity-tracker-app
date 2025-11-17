@@ -547,6 +547,8 @@ def replay_events(events_df: pd.DataFrame, strategy_id: int = None):
         elif event_type == 'withdrawal' and investor and usd_amount > 0:
             investor_balances[investor] = investor_balances.get(investor, 0.0) - usd_amount
         elif event_type == 'valuation':
+            if strategy_id is None and pd.notna(row.get('strategy_id')):
+                continue
             new_total_value = float(row.get('valuation_total_usd', 0.0) or 0.0)
             if new_total_value > 0:
                 current_total_from_balances = sum(investor_balances.values())
@@ -968,7 +970,6 @@ else:
     else:
         events_df = all_events_df
 
-    # Calculate balances and history for main portfolio
     total_balances, total_history = replay_events(all_events_df)
     total_portfolio_value = sum(total_balances.values())
     
@@ -982,6 +983,33 @@ else:
                 'history': strat_history,
                 'total_value': sum(strat_balances.values())
             }
+
+    aggregated_total = None
+    if strategy_data and any(not d['history'].empty for d in strategy_data.values()):
+        histories = {name: d['history'][['date', 'total']].copy() for name, d in strategy_data.items() if not d['history'].empty}
+        for k in histories:
+            histories[k]['date'] = pd.to_datetime(histories[k]['date'])
+        all_dates = sorted(pd.to_datetime(pd.concat([h['date'] for h in histories.values()]).unique()))
+        agg_df_tmp = pd.DataFrame({'date': all_dates})
+        proto_cols_tmp = []
+        for name, h in histories.items():
+            col_name = name
+            proto_cols_tmp.append(col_name)
+            tmp = h.rename(columns={'total': col_name})
+            agg_df_tmp = agg_df_tmp.merge(tmp, on='date', how='left')
+        for c in proto_cols_tmp:
+            agg_df_tmp[c] = agg_df_tmp[c].ffill().fillna(0.0)
+        agg_df_tmp['Total'] = agg_df_tmp[proto_cols_tmp].sum(axis=1)
+        if not agg_df_tmp.empty:
+            aggregated_total = float(agg_df_tmp['Total'].iloc[-1])
+
+    if aggregated_total is not None:
+        sum_bal = sum(total_balances.values())
+        total_portfolio_value = aggregated_total
+        if sum_bal > 0 and aggregated_total != sum_bal:
+            factor = aggregated_total / sum_bal
+            for inv in list(total_balances.keys()):
+                total_balances[inv] = total_balances[inv] * factor
     
     # Calculate overall ROI
     overall_roi = 0
@@ -1088,16 +1116,20 @@ else:
                     y=agg_df['Total'],
                     name='Total Portfolio',
                     mode='lines+markers',
-                    line=dict(color=COA_COLORS['primary_purple'], width=3),
-                    marker=dict(size=6, color=COA_COLORS['primary_blue'])
+                    line=dict(color='#ffffff', width=3),
+                    marker=dict(size=6, color='#ffffff')
                 ))
+                proto_color_map = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
+                default_colors = [COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], COA_COLORS['light_purple'], COA_COLORS['light_blue']]
                 for i, c in enumerate(proto_cols):
+                    col = proto_color_map.get(c, default_colors[i % len(default_colors)])
                     fig_portfolio.add_trace(go.Scatter(
                         x=agg_df['date'],
                         y=agg_df[c],
                         name=c,
-                        mode='lines',
-                        line=dict(width=2)
+                        mode='lines+markers',
+                        line=dict(width=2, color=col),
+                        marker=dict(size=5, color=col)
                     ))
                 fig_portfolio.update_layout(
                     title='Total Portfolio Value Over Time',
@@ -1149,18 +1181,35 @@ else:
         
         with col2:
             # Strategy performance comparison
-            if strategy_data:
-                strategy_names = list(strategy_data.keys())
-                strategy_values = [data['total_value'] for data in strategy_data.values()]
-                
+            if strategy_data and any(not d['history'].empty for d in strategy_data.values()):
+                histories = {name: d['history'][['date', 'total']].copy() for name, d in strategy_data.items() if not d['history'].empty}
+                for k in histories:
+                    histories[k]['date'] = pd.to_datetime(histories[k]['date'])
+                all_dates = sorted(pd.to_datetime(pd.concat([h['date'] for h in histories.values()]).unique()))
+                agg_df_pie = pd.DataFrame({'date': all_dates})
+                proto_cols_pie = []
+                for name, h in histories.items():
+                    col_name = name
+                    proto_cols_pie.append(col_name)
+                    tmp = h.rename(columns={'total': col_name})
+                    agg_df_pie = agg_df_pie.merge(tmp, on='date', how='left')
+                for c in proto_cols_pie:
+                    agg_df_pie[c] = agg_df_pie[c].ffill().fillna(0.0)
+                alloc_names = proto_cols_pie
+                alloc_values = agg_df_pie[proto_cols_pie].iloc[-1].tolist() if not agg_df_pie.empty else []
+                color_map = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
                 fig_strategies = px.pie(
-                    names=strategy_names,
-                    values=strategy_values,
-                    title='Strategy Allocation',
-                    color_discrete_sequence=[COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], 
-                                           COA_COLORS['light_purple'], COA_COLORS['light_blue']]
+                    names=alloc_names,
+                    values=alloc_values,
+                    title='Allocazione Protocollo',
+                    color_discrete_map=color_map
                 )
-                fig_strategies.update_layout(height=400)
+                fig_strategies.update_layout(
+                    height=400,
+                    plot_bgcolor='#1a1a1a',
+                    paper_bgcolor='#1a1a1a',
+                    font=dict(color='#e2e8f0')
+                )
                 st.plotly_chart(fig_strategies, use_container_width=True)
         
         # Add shared charts like in CHIODI_old.py
