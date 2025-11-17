@@ -1240,27 +1240,27 @@ else:
                     with colm1:
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="display:flex; align-items:center; justify-content:space-between;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">{best_year}</span>
                                 <span style="display:inline-flex; gap:8px; align-items:center;">
-                                    <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</span>
-                                    <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">{(best_roi or 0):+.1f}%</span>
+                                    <span style="font-size:1.6rem; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">${best_gain:,.0f}</span>
+                                    <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color}; color:white;">{(best_roi or 0):+.1f}%</span>
                                 </span>
                             </div>
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
                         </div>
                         """, unsafe_allow_html=True)
                     with colm2:
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="display:flex; align-items:center; justify-content:space-between;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">{worst_year}</span>
                                 <span style="display:inline-flex; gap:8px; align-items:center;">
-                                    <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</span>
-                                    <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">{(worst_roi or 0):+.1f}%</span>
+                                    <span style="font-size:1.6rem; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">${worst_gain:,.0f}</span>
+                                    <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color}; color:white;">{(worst_roi or 0):+.1f}%</span>
                                 </span>
                             </div>
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
                         </div>
                         """, unsafe_allow_html=True)
                     with colm3:
@@ -1295,10 +1295,11 @@ else:
                         """, unsafe_allow_html=True)
                     st.subheader('💰 Annual Investment Flows')
                     flows_df = annual_df[['Year','Start_Year_Balance','Deposits','Withdrawals','End_Value','ROI %']].copy()
-                    flows_df.rename(columns={'End_Value': 'Net_Flow', 'Start_Year_Balance': 'Start_of_Year'}, inplace=True)
+                    flows_df.rename(columns={'End_Value': 'Year_End_Value', 'Start_Year_Balance': 'Start_of_Year'}, inplace=True)
+                    flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     st.dataframe(
-                        flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
+                        flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
                         use_container_width=True,
                         hide_index=True
                     )
@@ -1315,10 +1316,11 @@ else:
                     st.metric('Guadagno Totale dal Primo Investimento', f"${total_gain:,.0f}", f"{total_roi:+.1f}%")
                     st.subheader('💰 I Tuoi Flussi Annuali')
                     flows_df = annual_df[['Year','Start_Year_Balance','Deposits','Withdrawals','End_Value','ROI %']].copy()
-                    flows_df.rename(columns={'End_Value': 'Net_Flow', 'Start_Year_Balance': 'Start_of_Year'}, inplace=True)
+                    flows_df.rename(columns={'End_Value': 'Year_End_Value', 'Start_Year_Balance': 'Start_of_Year'}, inplace=True)
+                    flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
                     flows_df['Year'] = flows_df['Year'].astype(int)
                     st.dataframe(
-                        flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Net_Flow': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
+                        flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
                         use_container_width=True,
                         hide_index=True
                     )
