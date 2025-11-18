@@ -1362,7 +1362,6 @@ else:
                     )
             else:
                 annual_df = calculate_annual_performance(selected_investor, all_events_df, total_history)
-                display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
                 if annual_df is not None and not annual_df.empty:
                     inv_norm = selected_investor.strip().lower()
                     th_cols_norm = {str(c).strip().lower(): c for c in total_history.columns if c not in ['date','total']} if (total_history is not None and not total_history.empty) else {}
@@ -1404,6 +1403,7 @@ else:
                         + pd.to_numeric(annual_df.get('Withdrawals', 0.0), errors='coerce').fillna(0.0)
                     )
                     annual_df['ROI %'] = annual_df.apply(lambda r: (float(r['Net_Gain']) / float(r['Start_of_Year']) * 100) if float(r['Start_of_Year']) > 0 else None, axis=1)
+                    display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
                     gains_series = pd.to_numeric(annual_df['Net_Gain'], errors='coerce').fillna(0.0)
                     best_idx = int(gains_series.idxmax())
                     worst_idx = int(gains_series.idxmin())
@@ -1491,7 +1491,6 @@ else:
             if user_investor_name:
                 st.subheader('📈 Il Tuo Storico Annuale')
                 annual_df = calculate_annual_performance(user_investor_name, all_events_df, total_history)
-                display_annual_chart(annual_df, 'La Tua Performance')
                 if annual_df is not None and not annual_df.empty:
                     inv_norm_u = user_investor_name.strip().lower() if user_investor_name else ''
                     th_cols_norm_u = {str(c).strip().lower(): c for c in total_history.columns if c not in ['date','total']} if (total_history is not None and not total_history.empty) else {}
@@ -1533,6 +1532,7 @@ else:
                         + pd.to_numeric(annual_df.get('Withdrawals', 0.0), errors='coerce').fillna(0.0)
                     )
                     annual_df['ROI %'] = annual_df.apply(lambda r: (float(r['Net_Gain']) / float(r['Start_of_Year']) * 100) if float(r['Start_of_Year']) > 0 else None, axis=1)
+                    display_annual_chart(annual_df, 'La Tua Performance')
                     total_gain = float(annual_df['Net_Gain'].sum() or 0.0)
                     final_end_value = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
                     total_usd_invested = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
