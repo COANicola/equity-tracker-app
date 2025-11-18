@@ -1145,9 +1145,9 @@ else:
 
     # Dashboard Tab
     with tabs[0]:
-        st.markdown("### 📈 Portfolio Performance")
+        st.markdown("### 📈 Portfolio e Protocols Performance")
         
-        col1, col2 = st.columns([2, 1])
+        col1, col2 = st.columns([3, 1])
         
         with col1:
             # Main portfolio chart
@@ -1158,7 +1158,7 @@ else:
                 fig_portfolio.add_trace(go.Scatter(
                     x=agg_df['date'],
                     y=agg_df['Total'],
-                    name='Total Portfolio',
+                    name='Portfolio',
                     mode='lines+markers',
                     line=dict(color='#ffffff', width=3),
                     marker=dict(size=6, color='#ffffff')
@@ -1176,13 +1176,13 @@ else:
                         marker=dict(size=5, color=col)
                     ))
                 fig_portfolio.update_layout(
-                    title='Total Portfolio Value Over Time',
+                    title='Performance Protocolli',
                     plot_bgcolor='#1a1a1a',
                     paper_bgcolor='#1a1a1a',
                     font=dict(color='#e2e8f0'),
                     title_font_size=16,
                     title_font_color=COA_COLORS['primary_purple'],
-                    height=420,
+                    height=560,
                     hovermode='x unified',
                     xaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False),
                     yaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False, tickformat='$,.0f')
@@ -1195,7 +1195,7 @@ else:
                     total_history,
                     x='date',
                     y='total',
-                    title='Total Portfolio Value Over Time',
+                    title='Performance Protocolli',
                     labels={'date': 'Date', 'total': 'Portfolio Value (USD)'},
                     markers=True,
                     render_mode='svg'
@@ -1206,13 +1206,14 @@ else:
                     marker_size=6,
                     marker_color=COA_COLORS['primary_blue']
                 )
+                fig_portfolio.for_each_trace(lambda t: t.update(name='Portfolio'))
                 fig_portfolio.update_layout(
                     plot_bgcolor='#1a1a1a',
                     paper_bgcolor='#1a1a1a',
                     font=dict(color='#e2e8f0'),
                     title_font_size=16,
                     title_font_color=COA_COLORS['primary_purple'],
-                    height=420,
+                    height=560,
                     hovermode='x unified',
                     xaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False),
                     yaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False, tickformat='$,.0f')
@@ -1239,8 +1240,8 @@ else:
                     marker=dict(colors=[color_map.get(n, COA_COLORS['primary_purple']) for n in alloc_names])
                 )])
                 fig_strategies.update_layout(
-                    title='Allocazione Protocollo',
-                    height=400,
+                    title='Allocazione Protocolli',
+                    height=460,
                     plot_bgcolor='#1a1a1a',
                     paper_bgcolor='#1a1a1a',
                     font=dict(color='#e2e8f0')
@@ -1256,6 +1257,7 @@ else:
                     value_df_melted = total_history.melt(id_vars='date', value_vars=investor_cols, var_name='Investor', value_name='USD Value')
                     fig_investor_value = px.line(value_df_melted, x='date', y='USD Value', color='Investor', markers=True, 
                                                labels={'USD Value': 'Share Value (USD)', 'date': 'Date'})
+                    fig_investor_value.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_investor_value, use_container_width=True)
         else: 
             st.subheader("📈 Your Value Trend (USD)")
@@ -1275,6 +1277,7 @@ else:
                 pct_df_melted = pct_df.melt(id_vars='date', var_name='Investor', value_name='Share')
                 fig_shares = px.area(pct_df_melted, x='date', y='Share', color='Investor', markers=True)
                 fig_shares.update_yaxes(tickformat='.0%')
+                fig_shares.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_shares, use_container_width=True)
 
     # Investor Details Tab
