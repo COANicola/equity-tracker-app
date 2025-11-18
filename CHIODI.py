@@ -1075,7 +1075,7 @@ else:
             overall_roi = ((total_portfolio_value - total_usd_invested_overall) / total_usd_invested_overall * 100)
 
     # ---------- Key Metrics ----------
-    st.markdown("### 📊 Portfolio Overview")
+    st.markdown("### 📊 Portafoglio Overview")
     
     # Main metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -1145,7 +1145,7 @@ else:
 
     # Dashboard Tab
     with tabs[0]:
-        st.markdown("### 📈 Portfolio e Protocols Performance")
+        st.markdown("### 📈 Performance Portfolio e Protocolli")
         
         col1, col2 = st.columns([3, 1])
         
@@ -1181,7 +1181,6 @@ else:
                     paper_bgcolor='#1a1a1a',
                     font=dict(color='#e2e8f0'),
                     title_font_size=16,
-                    title_font_color=COA_COLORS['primary_purple'],
                     height=560,
                     hovermode='x unified',
                     xaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False),
