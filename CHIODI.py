@@ -1535,11 +1535,76 @@ else:
                     )
                     annual_df['ROI %'] = annual_df.apply(lambda r: (float(r['Net_Gain']) / float(r['Start_of_Year']) * 100) if float(r['Start_of_Year']) > 0 else None, axis=1)
                     display_annual_chart(annual_df, 'La Tua Performance')
-                    total_gain = float(annual_df['Net_Gain'].sum() or 0.0)
-                    final_end_value = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
-                    total_usd_invested = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
-                    total_roi = ((final_end_value - total_usd_invested) / total_usd_invested * 100) if total_usd_invested > 0 else 0.0
-                    st.metric('Guadagno Totale dal Primo Investimento', f"${total_gain:,.0f}", f"{total_roi:+.1f}%")
+                    gains_series_u = pd.to_numeric(annual_df['Net_Gain'], errors='coerce').fillna(0.0)
+                    best_idx_u = int(gains_series_u.idxmax())
+                    worst_idx_u = int(gains_series_u.idxmin())
+                    best_year_u = int(annual_df.loc[best_idx_u, 'Year'])
+                    best_gain_u = float(gains_series_u.iloc[best_idx_u])
+                    best_roi_val_u = annual_df.loc[best_idx_u, 'ROI %'] if 'ROI %' in annual_df.columns else None
+                    best_roi_u = float(best_roi_val_u) if (best_roi_val_u is not None and pd.notna(best_roi_val_u)) else 0.0
+                    worst_year_u = int(annual_df.loc[worst_idx_u, 'Year'])
+                    worst_gain_u = float(gains_series_u.iloc[worst_idx_u])
+                    worst_roi_val_u = annual_df.loc[worst_idx_u, 'ROI %'] if 'ROI %' in annual_df.columns else None
+                    worst_roi_u = float(worst_roi_val_u) if (worst_roi_val_u is not None and pd.notna(worst_roi_val_u)) else 0.0
+                    best_color_u = COA_COLORS['primary_blue'] if best_gain_u >= 0 else COA_COLORS['primary_purple']
+                    worst_color_u = COA_COLORS['primary_blue'] if worst_gain_u >= 0 else COA_COLORS['primary_purple']
+                    colu1, colu2, colu3, colu4 = st.columns(4)
+                    with colu1:
+                        st.markdown(f"""
+                        <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
+                                <span style="font-size:1.6rem; color: var(--text-primary);">{best_year_u}</span>
+                                <span style="display:inline-flex; gap:8px; align-items:center;">
+                                    <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color_u}; color:white;">${best_gain_u:,.0f}</span>
+                                    <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{best_color_u}; color:white;">{(best_roi_u or 0):+.1f}%</span>
+                                </span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with colu2:
+                        st.markdown(f"""
+                        <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
+                            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
+                                <span style="font-size:1.6rem; color: var(--text-primary);">{worst_year_u}</span>
+                                <span style="display:inline-flex; gap:8px; align-items:center;">
+                                    <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color_u}; color:white;">${worst_gain_u:,.0f}</span>
+                                    <span style="font-size:1.0rem; padding:0.25rem 0.6rem; border-radius:12px; background:{worst_color_u}; color:white;">{(worst_roi_u or 0):+.1f}%</span>
+                                </span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with colu3:
+                        avg_gain_u = float(gains_series_u.mean() or 0.0)
+                        final_end_value_u = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
+                        total_deposits_u = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
+                        total_roi_pct_u = ((final_end_value_u - total_deposits_u) / total_deposits_u * 100) if total_deposits_u > 0 else 0.0
+                        years_count_u = int(pd.Series(annual_df['Year']).nunique()) if 'Year' in annual_df.columns else len(annual_df)
+                        avg_roi_u = float(total_roi_pct_u / years_count_u) if years_count_u > 0 else 0.0
+                        st.markdown(f"""
+                        <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Avg Annual</div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <span style="font-size:1.6rem; color: var(--text-primary);">${avg_gain_u:,.0f}</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if avg_roi_u >= 0 else COA_COLORS['primary_purple']}; color:white;">{avg_roi_u:+.1f}%</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with colu4:
+                        total_gain_u = float(gains_series_u.sum() or 0.0)
+                        final_end_value_u = float(pd.Series(annual_df['End_Value']).dropna().iloc[-1] if not pd.Series(annual_df['End_Value']).dropna().empty else 0.0)
+                        total_deposits_u2 = float(pd.Series(annual_df['Deposits']).sum() or 0.0)
+                        total_roi_u = ((final_end_value_u - total_deposits_u2) / total_deposits_u2 * 100) if total_deposits_u2 > 0 else 0.0
+                        st.markdown(f"""
+                        <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Total Gain</div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <span style="font-size:1.6rem; color: var(--text-primary);">${total_gain_u:,.0f}</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if total_roi_u >= 0 else COA_COLORS['primary_purple']}; color:white;">{total_roi_u:+.1f}%</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                     st.subheader('💰 I Tuoi Flussi Annuali')
                     flows_df = annual_df[['Year','Deposits','Start_of_Year','Withdrawals','End_Value','ROI %']].copy()
                     flows_df.rename(columns={'End_Value': 'Year_End_Value'}, inplace=True)
@@ -1667,7 +1732,7 @@ else:
                             hide_index=True
                         )
                         
-                        ev_id_to_edit = st.selectbox('Select Event ID to edit', options=events_to_edit['id'].tolist())
+                        ev_id_to_edit = st.selectbox('Select Event ID to edit', options=sorted(events_to_edit['id'].tolist(), reverse=True))
                         
                         if ev_id_to_edit:
                             ev_row = db.get(Event, ev_id_to_edit)
