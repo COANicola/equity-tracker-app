@@ -1268,6 +1268,9 @@ else:
         
         st.subheader("📊 Investor Shares Evolution (%)")
         history_to_show = total_history.copy()
+        if current_role != 'admin':
+            if user_investor_name and user_investor_name in history_to_show.columns:
+                history_to_show = history_to_show[['date', 'total', user_investor_name]].copy()
         if not history_to_show.empty and len(history_to_show.columns) > 2:
             inv_cols = [c for c in history_to_show.columns if c not in ['date', 'total']]
             if inv_cols:
