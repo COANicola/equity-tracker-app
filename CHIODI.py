@@ -448,7 +448,7 @@ Base.metadata.create_all(engine)
 session_factory = sessionmaker(bind=engine)
 Session = scoped_session(session_factory)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt", "pbkdf2_sha256"], deprecated="auto")
 
 # ---------- Context manager for database sessions ----------
 @contextmanager

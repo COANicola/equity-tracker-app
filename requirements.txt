@@ -9,9 +9,9 @@ sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0  # For PostgreSQL/Neon.com support
 
 # Authentication & Security
-passlib>=1.7.0
+passlib>=1.7.4
 PyJWT>=2.8.0
-bcrypt>=4.0.0
+bcrypt<4
 
 # Financial data
 yfinance>=0.2.0
