@@ -4,7 +4,7 @@ Enhanced version with multi-strategy support, annual reports, and improved styli
 """
 
 import streamlit as st
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, Text, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, Text, Boolean, func
 from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
 import pandas as pd
 import yfinance as yf
@@ -896,12 +896,19 @@ if not st.session_state.jwt:
             with col_btn2:
                 if st.form_submit_button('Login', use_container_width=True):
                     with get_db_session() as db:
-                        user = db.query(User).filter(User.username == login_user).first()
-                        if user and verify_password(login_pw, user.password_hash):
-                            st.session_state.jwt, st.session_state.username, st.session_state.role = create_jwt(user.username, user.role), user.username, user.role
-                            st.rerun()
-                        else: 
-                            st.error('❌ Invalid credentials')
+                        lu = (login_user or "").strip()
+                        lp = (login_pw or "").strip()
+                        if not lu or not lp:
+                            st.error('❌ Inserisci username e password')
+                        else:
+                            user = db.query(User).filter(func.lower(User.username) == lu.lower()).first()
+                            if not user:
+                                st.error('❌ Utente non trovato')
+                            elif verify_password(lp, user.password_hash):
+                                st.session_state.jwt, st.session_state.username, st.session_state.role = create_jwt(user.username, user.role), user.username, user.role
+                                st.rerun()
+                            else:
+                                st.error('❌ Password errata')
         
         # Professional footer
         st.markdown("""
