@@ -1676,7 +1676,7 @@ else:
                             cols = st.columns(len(protos))
                             for j, proto in enumerate(protos):
                                 with cols[j]:
-                                    st.markdown(f"**{proto}**")
+                                    st.markdown(f"<div style='font-size:1.25rem; font-weight:700; color: var(--text-primary); margin-bottom: 0.5rem;'>{proto}</div>", unsafe_allow_html=True)
                                     for _, r in groups.get_group(proto).sort_values('id').iterrows():
                                         st.markdown(f"- {str(r['note'])}")
                         else:
