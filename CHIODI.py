@@ -439,12 +439,25 @@ class Event(Base):
     valuation_total_usd = Column(Float, nullable=True)
     note = Column(Text, nullable=True)
 
+class UpdateNote(Base):
+    __tablename__ = 'updates'
+    id = Column(Integer, primary_key=True)
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+    strategy_id = Column(Integer, nullable=True)
+    note = Column(Text, nullable=False)
+    created_by = Column(String, nullable=False)
+    created_at = Column(Date, default=datetime.date.today)
+
 if DB_URL.startswith('sqlite'):
     engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 else:
     engine = create_engine(DB_URL)
 
-Base.metadata.create_all(engine)
+try:
+    Base.metadata.create_all(engine)
+except Exception:
+    pass
 session_factory = sessionmaker(bind=engine)
 Session = scoped_session(session_factory)
 
@@ -990,6 +1003,8 @@ with get_db_session() as db:
     # Load strategies
     strategies_df = pd.read_sql(db.query(Strategy).filter(Strategy.is_active == True).statement, db.bind)
 
+    updates_df = pd.read_sql(db.query(UpdateNote).statement, db.bind)
+
  
 
 # ---------- Main Dashboard ----------
@@ -1144,7 +1159,7 @@ else:
     st.divider()
 
     # ---------- Navigation Tabs ----------
-    tab_list = ["📈 Dashboard", "👥 Investor Details"]
+    tab_list = ["📈 Dashboard", "👥 Investor Details", "📝 Aggiornamenti"]
     if current_role == 'admin':
         tab_list.extend(["⚙️ Event Management"])
     
@@ -1629,9 +1644,111 @@ else:
                         hide_index=True
                     )
 
+    # Aggiornamenti Tab
+    with tabs[2]:
+        st.markdown("### 📝 Aggiornamenti")
+        if 'updates_df' in locals():
+            df_u = updates_df.copy()
+        else:
+            with get_db_session() as db:
+                df_u = pd.read_sql(db.query(UpdateNote).statement, db.bind)
+        if df_u.empty:
+            st.info("Nessun aggiornamento disponibile")
+        else:
+            df_u['year'] = pd.to_numeric(df_u['year'], errors='coerce').fillna(0).astype(int)
+            df_u['month'] = pd.to_numeric(df_u['month'], errors='coerce').fillna(0).astype(int)
+            years = sorted([y for y in df_u['year'].unique() if y > 0], reverse=True)
+            selected_year = st.selectbox('Anno', options=years) if years else None
+            if selected_year is not None:
+                df_year = df_u[df_u['year'] == selected_year]
+                months = sorted([m for m in df_year['month'].unique() if 1 <= m <= 12])
+                month_names = {1:'Gennaio',2:'Febbraio',3:'Marzo',4:'Aprile',5:'Maggio',6:'Giugno',7:'Luglio',8:'Agosto',9:'Settembre',10:'Ottobre',11:'Novembre',12:'Dicembre'}
+                month_labels = [month_names.get(m, str(m)) for m in months]
+                month_tabs = st.tabs(month_labels) if months else []
+                for i, m in enumerate(months):
+                    with month_tabs[i]:
+                        df_m = df_year[df_year['month'] == m].copy()
+                        strategy_mapping = strategies_df[['id','name']].set_index('id')['name'].to_dict() if strategies_df is not None and not strategies_df.empty else {}
+                        df_m['protocol_name'] = df_m['strategy_id'].map(strategy_mapping).fillna('Nessun Protocollo')
+                        groups = df_m.groupby('protocol_name', dropna=False)
+                        protos = list(groups.groups.keys())
+                        if protos:
+                            cols = st.columns(len(protos))
+                            for j, proto in enumerate(protos):
+                                with cols[j]:
+                                    st.markdown(f"**{proto}**")
+                                    for _, r in groups.get_group(proto).sort_values('id').iterrows():
+                                        st.markdown(f"- {str(r['note'])}")
+                        else:
+                            st.info("Nessuna nota per questo mese")
+
+        if current_role == 'admin':
+            st.divider()
+            st.subheader("➕ Aggiungi Nota")
+            with st.form("add_update_note_form"):
+                now = datetime.date.today()
+                a_year = st.number_input('Anno', min_value=2000, max_value=2100, value=now.year, step=1)
+                month_map = {1:'Gennaio',2:'Febbraio',3:'Marzo',4:'Aprile',5:'Maggio',6:'Giugno',7:'Luglio',8:'Agosto',9:'Settembre',10:'Ottobre',11:'Novembre',12:'Dicembre'}
+                a_month = st.selectbox('Mese', options=list(range(1,13)), index=now.month-1, format_func=lambda m: month_map[m])
+                proto_options = get_protocol_options(strategies_df, include_no=True)
+                selected_proto = st.selectbox('Protocollo', options=proto_options)
+                note_text = st.text_area('Note', placeholder='Inserisci le note...')
+                if st.form_submit_button('Salva Nota', use_container_width=True):
+                    with get_db_session() as db:
+                        strategy_id = resolve_strategy_id_by_name(strategies_df, selected_proto) if selected_proto != 'No Protocol' else None
+                        db.add(UpdateNote(year=int(a_year), month=int(a_month), strategy_id=strategy_id, note=note_text.strip(), created_by=current_user, created_at=datetime.date.today()))
+                    st.success("Nota salvata")
+                    time.sleep(1)
+                    st.rerun()
+
+            st.subheader("✏️ Modifica/Elimina Nota")
+            with get_db_session() as db:
+                notes_to_edit = pd.read_sql(db.query(UpdateNote).statement, db.bind)
+            if not notes_to_edit.empty:
+                strategy_mapping = strategies_df[['id','name']].set_index('id')['name'].to_dict() if strategies_df is not None and not strategies_df.empty else {}
+                notes_to_edit['protocol_name'] = notes_to_edit['strategy_id'].map(strategy_mapping).fillna('Nessun Protocollo')
+                notes_to_edit = notes_to_edit[['id','year','month','protocol_name','note','created_by','created_at']].sort_values(['year','month','id'], ascending=[False, False, False])
+                st.dataframe(notes_to_edit, use_container_width=True, hide_index=True)
+                sel_id = st.selectbox('Seleziona ID Nota', options=sorted(notes_to_edit['id'].tolist(), reverse=True))
+                if sel_id:
+                    with get_db_session() as db:
+                        n_row = db.get(UpdateNote, int(sel_id))
+                        if n_row:
+                            with st.form(f"edit_update_note_{n_row.id}"):
+                                e_year = st.number_input('Anno', min_value=2000, max_value=2100, value=int(n_row.year), step=1)
+                                month_map = {1:'Gennaio',2:'Febbraio',3:'Marzo',4:'Aprile',5:'Maggio',6:'Giugno',7:'Luglio',8:'Agosto',9:'Settembre',10:'Ottobre',11:'Novembre',12:'Dicembre'}
+                                e_month = st.selectbox('Mese', options=list(range(1,13)), index=max(0, int(n_row.month)-1), format_func=lambda m: month_map[m])
+                                current_protocol = 'No Protocol'
+                                if n_row.strategy_id and strategy_mapping:
+                                    current_protocol = strategy_mapping.get(int(n_row.strategy_id), 'No Protocol')
+                                proto_options = get_protocol_options(strategies_df, include_no=True)
+                                e_protocol = st.selectbox('Protocollo', options=proto_options, index=proto_options.index(current_protocol) if current_protocol in proto_options else 0)
+                                e_note = st.text_area('Note', value=n_row.note or '')
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    if st.form_submit_button('💾 Aggiorna', use_container_width=True):
+                                        n_row.year = int(e_year)
+                                        n_row.month = int(e_month)
+                                        if e_protocol != 'No Protocol':
+                                            n_row.strategy_id = resolve_strategy_id_by_name(strategies_df, e_protocol)
+                                        else:
+                                            n_row.strategy_id = None
+                                        n_row.note = (e_note or '').strip()
+                                        db.commit()
+                                        st.success(f"Nota #{n_row.id} aggiornata")
+                                        time.sleep(1)
+                                        st.rerun()
+                                with c2:
+                                    if st.form_submit_button('🗑️ Elimina', type='primary', use_container_width=True):
+                                        db.delete(n_row)
+                                        db.commit()
+                                        st.warning(f"Nota #{n_row.id} eliminata")
+                                        time.sleep(1)
+                                        st.rerun()
+
     # Event Management Tab (Admin Only)
     if current_role == 'admin':
-        with tabs[2] if len(tabs) > 2 else st.container():
+        with tabs[-1] if len(tabs) > 0 else st.container():
             st.markdown("### ⚙️ Event Management")
             
             form_cols = st.columns(2)
