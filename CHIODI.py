@@ -880,7 +880,7 @@ if 'jwt' not in st.session_state:
 
 # Initialize theme preference
 if 'theme' not in st.session_state:
-    st.session_state.theme = 'light'  # Default to light theme
+    st.session_state.theme = 'dark'
 
 # ---------- Authentication ----------
 with get_db_session() as db:
