@@ -1678,7 +1678,8 @@ else:
                                 with cols[j]:
                                     st.markdown(f"<div style='font-size:1.25rem; font-weight:700; color: var(--text-primary); margin-bottom: 0.5rem;'>{proto}</div>", unsafe_allow_html=True)
                                     for _, r in groups.get_group(proto).sort_values('id').iterrows():
-                                        st.markdown(f"- {str(r['note'])}")
+                                        note_txt = str(r['note']) if r['note'] is not None else ''
+                                        st.markdown(f"<div style='white-space: pre-line; margin-bottom:0.35rem;'>• {note_txt}</div>", unsafe_allow_html=True)
                         else:
                             st.info("Nessuna nota per questo mese")
 
