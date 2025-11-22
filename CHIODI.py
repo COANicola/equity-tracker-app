@@ -143,6 +143,7 @@ def apply_coa_styling():
         --card-bg: {card_bg};
         --text-primary: {text_primary};
         --text-secondary: {text_secondary};
+        color-scheme: dark;
     }}
     
     /* Dark theme support using media query as fallback */
@@ -233,7 +234,8 @@ def apply_coa_styling():
     
     /* Global styles */
     .stApp {{
-        background-color: var(--background);
+        background-color: var(--background) !important;
+        color: var(--text-primary) !important;
     }}
     
     .stImage {{
@@ -872,15 +874,15 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
 
 # ---------- Main App ----------
 st.set_page_config(page_title='COA Equity Tracker', page_icon='📊', layout='wide')
+
+if 'theme' not in st.session_state:
+    st.session_state.theme = 'dark'
+
 apply_coa_styling()
 
 # Initialize session state
 if 'jwt' not in st.session_state:
     st.session_state.jwt, st.session_state.username, st.session_state.role = None, None, None
-
-# Initialize theme preference
-if 'theme' not in st.session_state:
-    st.session_state.theme = 'dark'
 
 # ---------- Authentication ----------
 with get_db_session() as db:
