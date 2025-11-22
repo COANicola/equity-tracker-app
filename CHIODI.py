@@ -1677,9 +1677,12 @@ else:
                             for j, proto in enumerate(protos):
                                 with cols[j]:
                                     st.markdown(f"<div style='font-size:1.25rem; font-weight:700; color: var(--text-primary); margin-bottom: 0.5rem;'>{proto}</div>", unsafe_allow_html=True)
-                                    for _, r in groups.get_group(proto).sort_values('id').iterrows():
-                                        note_txt = str(r['note']) if r['note'] is not None else ''
-                                        st.markdown(f"<div style='white-space: pre-line; margin-bottom:0.35rem;'>• {note_txt}</div>", unsafe_allow_html=True)
+                                    group_rows = groups.get_group(proto).sort_values('id')
+                                    items_html = "".join(
+                                        f"<li style='white-space: pre-line;'>{str(r['note']) if r['note'] is not None else ''}</li>"
+                                        for _, r in group_rows.iterrows()
+                                    )
+                                    st.markdown(f"<ul style='margin:0; padding-left:1.2rem;'>{items_html}</ul>", unsafe_allow_html=True)
                         else:
                             st.info("Nessuna nota per questo mese")
 
