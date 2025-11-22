@@ -1669,7 +1669,7 @@ else:
                     with month_tabs[i]:
                         df_m = df_year[df_year['month'] == m].copy()
                         strategy_mapping = strategies_df[['id','name']].set_index('id')['name'].to_dict() if strategies_df is not None and not strategies_df.empty else {}
-                        df_m['protocol_name'] = df_m['strategy_id'].map(strategy_mapping).fillna('Nessun Protocollo')
+                        df_m['protocol_name'] = df_m['strategy_id'].map(strategy_mapping).fillna('Nota Generale')
                         groups = df_m.groupby('protocol_name', dropna=False)
                         protos = list(groups.groups.keys())
                         if protos:
@@ -1710,7 +1710,7 @@ else:
                 notes_to_edit = pd.read_sql(db.query(UpdateNote).statement, db.bind)
             if not notes_to_edit.empty:
                 strategy_mapping = strategies_df[['id','name']].set_index('id')['name'].to_dict() if strategies_df is not None and not strategies_df.empty else {}
-                notes_to_edit['protocol_name'] = notes_to_edit['strategy_id'].map(strategy_mapping).fillna('Nessun Protocollo')
+                notes_to_edit['protocol_name'] = notes_to_edit['strategy_id'].map(strategy_mapping).fillna('Nota Generale')
                 notes_to_edit = notes_to_edit[['id','year','month','protocol_name','note','created_by','created_at']].sort_values(['year','month','id'], ascending=[False, False, False])
                 st.dataframe(notes_to_edit, use_container_width=True, hide_index=True)
                 sel_id = st.selectbox('Seleziona ID Nota', options=sorted(notes_to_edit['id'].tolist(), reverse=True))
