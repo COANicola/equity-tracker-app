@@ -760,7 +760,8 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
             ph = portfolio_history_df.copy()
             ph['date'] = pd.to_datetime(ph['date']).dt.date
             before_start = ph[ph['date'] < start_date]
-            start_balance = float(before_start[investor_name].iloc[-1]) if not before_start.empty else 0.0
+            val = before_start[investor_name].iloc[-1] if not before_start.empty else 0.0
+            start_balance = float(val) if pd.notna(val) else 0.0
         else:
             events_upto_start = all_events_df[all_events_df['date'] < start_date]
             start_balances, _ = replay_events(events_upto_start)
@@ -772,7 +773,8 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
             ph = portfolio_history_df.copy()
             ph['date'] = pd.to_datetime(ph['date']).dt.date
             upto_end = ph[ph['date'] <= end_date]
-            end_balance = float(upto_end[investor_name].iloc[-1]) if not upto_end.empty else start_balance
+            val = upto_end[investor_name].iloc[-1] if not upto_end.empty else start_balance
+            end_balance = float(val) if pd.notna(val) else start_balance
         else:
             events_upto_end = all_events_df[all_events_df['date'] <= end_date]
             end_balances, _ = replay_events(events_upto_end)
@@ -806,9 +808,11 @@ def calculate_monthly_performance(investor_name: str, year: int, all_events_df: 
     
     # Use portfolio_history if available to capture market value changes (unrealized gains)
     ph = None
+    ph_last_date = None
     if portfolio_history_df is not None and not portfolio_history_df.empty and investor_name in portfolio_history_df.columns:
         ph = portfolio_history_df.copy()
         ph['date'] = pd.to_datetime(ph['date']).dt.date
+        ph_last_date = ph['date'].max()
     
     records = []
     for month in range(1, 13):
@@ -820,14 +824,23 @@ def calculate_monthly_performance(investor_name: str, year: int, all_events_df: 
             end_date = today
         if ph is not None:
             before_start = ph[ph['date'] < start_date]
-            start_balance = float(before_start[investor_name].iloc[-1]) if not before_start.empty else 0.0
+            val = before_start[investor_name].iloc[-1] if not before_start.empty else 0.0
+            start_balance = float(val) if pd.notna(val) else 0.0
         else:
             events_upto_start = events_df[events_df['date'] < start_date]
             start_balances, _ = replay_events(events_upto_start)
             start_balance = float(start_balances.get(investor_name, 0.0))
-        if ph is not None:
+            
+        # Determine if we can use PH for end_balance or need to replay (e.g. if PH is stale)
+        use_ph_end = False
+        if ph is not None and ph_last_date is not None:
+            if ph_last_date >= end_date:
+                use_ph_end = True
+                
+        if use_ph_end:
             upto_end = ph[ph['date'] <= end_date]
-            end_balance = float(upto_end[investor_name].iloc[-1]) if not upto_end.empty else start_balance
+            val = upto_end[investor_name].iloc[-1] if not upto_end.empty else start_balance
+            end_balance = float(val) if pd.notna(val) else start_balance
         else:
             events_upto_end = events_df[events_df['date'] <= end_date]
             end_balances, _ = replay_events(events_upto_end)
