@@ -10,6 +10,7 @@ import pandas as pd
 import yfinance as yf
 from passlib.context import CryptContext
 import datetime
+import calendar
 import plotly.express as px
 import plotly.graph_objects as go
 import jwt
@@ -789,6 +790,60 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
         })
     return pd.DataFrame(records)
 
+def calculate_monthly_performance(investor_name: str, year: int, all_events_df: pd.DataFrame, portfolio_history_df: pd.DataFrame = None) -> pd.DataFrame:
+    if not investor_name or all_events_df is None or all_events_df.empty:
+        return pd.DataFrame()
+    year = int(year)
+    today = datetime.date.today()
+    if datetime.date(year, 1, 1) > today:
+        return pd.DataFrame()
+    events_df = all_events_df.copy()
+    events_df['date'] = pd.to_datetime(events_df['date']).dt.date
+    month_names = {1:'Gennaio',2:'Febbraio',3:'Marzo',4:'Aprile',5:'Maggio',6:'Giugno',7:'Luglio',8:'Agosto',9:'Settembre',10:'Ottobre',11:'Novembre',12:'Dicembre'}
+    ph = None
+    if portfolio_history_df is not None and not portfolio_history_df.empty and investor_name in portfolio_history_df.columns:
+        ph = portfolio_history_df.copy()
+        ph['date'] = pd.to_datetime(ph['date']).dt.date
+    records = []
+    for month in range(1, 13):
+        start_date = datetime.date(year, month, 1)
+        if start_date > today:
+            break
+        end_date = datetime.date(year, month, calendar.monthrange(year, month)[1])
+        if end_date > today:
+            end_date = today
+        if ph is not None:
+            before_start = ph[ph['date'] < start_date]
+            start_balance = float(before_start[investor_name].iloc[-1]) if not before_start.empty else 0.0
+        else:
+            events_upto_start = events_df[events_df['date'] < start_date]
+            start_balances, _ = replay_events(events_upto_start)
+            start_balance = float(start_balances.get(investor_name, 0.0))
+        if ph is not None:
+            upto_end = ph[ph['date'] <= end_date]
+            end_balance = float(upto_end[investor_name].iloc[-1]) if not upto_end.empty else start_balance
+        else:
+            events_upto_end = events_df[events_df['date'] <= end_date]
+            end_balances, _ = replay_events(events_upto_end)
+            end_balance = float(end_balances.get(investor_name, 0.0))
+        month_events = events_df[(events_df['date'] >= start_date) & (events_df['date'] <= end_date) & (events_df['investor'] == investor_name)]
+        deposits = month_events[month_events['type'] == 'deposit']['usd_amount'].sum()
+        withdrawals = month_events[month_events['type'] == 'withdrawal']['usd_amount'].sum()
+        net_gain = end_balance - start_balance - float(deposits or 0.0) + float(withdrawals or 0.0)
+        start_of_month = float(start_balance) + float(deposits or 0.0)
+        roi_pct = (net_gain / float(start_of_month) * 100) if float(start_of_month) > 0 else None
+        records.append({
+            'Mese_Num': month,
+            'Mese': month_names.get(month, str(month)),
+            'Valore Inizio': float(start_balance),
+            'Valore Fine': float(end_balance),
+            'Depositi': float(deposits or 0.0),
+            'Prelievi': float(withdrawals or 0.0),
+            'Guadagno Netto': float(net_gain),
+            'ROI %': float(roi_pct) if roi_pct is not None else None
+        })
+    return pd.DataFrame(records)
+
 def display_annual_chart(annual_df: pd.DataFrame, title: str):
     if annual_df is None or annual_df.empty:
         return
@@ -809,11 +864,46 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
     ))
     fig.update_layout(
         title=title,
-        xaxis_title='Year',
-        yaxis_title='Net Gain (USD)',
+        xaxis_title='Anno',
+        yaxis_title='Guadagno Netto (USD)',
         yaxis_tickformat='$,.0f',
         xaxis_type='category',
         xaxis_categoryorder='category ascending',
+        plot_bgcolor='#1a1a1a',
+        paper_bgcolor='#1a1a1a',
+        font=dict(color='#e2e8f0'),
+        height=420
+    )
+    fig.update_xaxes(gridcolor='rgba(226,232,240,0.15)')
+    fig.update_yaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
+    fig.update_traces(textfont_color='#e2e8f0')
+    st.plotly_chart(fig, use_container_width=True)
+
+def display_monthly_chart(monthly_df: pd.DataFrame, title: str):
+    if monthly_df is None or monthly_df.empty:
+        return
+    monthly_df = monthly_df.sort_values('Mese_Num')
+    months = monthly_df['Mese'].tolist()
+    gains = [float(g) if pd.notna(g) else 0.0 for g in monthly_df['Guadagno Netto'].tolist()]
+    rois = [float(r) if pd.notna(r) else 0.0 for r in monthly_df['ROI %'].tolist()] if 'ROI %' in monthly_df.columns else [0.0 for _ in gains]
+    colors = [COA_COLORS['primary_blue'] if (g or 0) >= 0 else COA_COLORS['primary_purple'] for g in gains]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=months,
+        y=gains,
+        marker_color=colors,
+        text=[f"${g:,.0f} | {r:+.1f}%" for g, r in zip(gains, rois)],
+        textposition='outside',
+        textfont=dict(size=14),
+        texttemplate='<b>%{text}</b>',
+        cliponaxis=False
+    ))
+    fig.update_layout(
+        title=title,
+        xaxis_title='Mese',
+        yaxis_title='Guadagno Netto (USD)',
+        yaxis_tickformat='$,.0f',
+        xaxis_type='category',
         plot_bgcolor='#1a1a1a',
         paper_bgcolor='#1a1a1a',
         font=dict(color='#e2e8f0'),
@@ -857,9 +947,9 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
         fig.add_trace(go.Bar(x=years_sorted_str, y=gains, name=inv, marker_color=inv_colors.get(inv, COA_COLORS['primary_blue']), text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
     fig.update_layout(
         barmode='group',
-        title='Annual Gains - All Investors',
-        xaxis_title='Year',
-        yaxis_title='Net Gain (USD)',
+        title='Guadagni Annuali - Tutti gli investitori',
+        xaxis_title='Anno',
+        yaxis_title='Guadagno Netto (USD)',
         yaxis_tickformat='$,.0f',
         xaxis_type='category',
         plot_bgcolor='#1a1a1a',
@@ -1078,6 +1168,7 @@ else:
                 'history': strat_history,
                 'total_value': sum(strat_balances.values())
             }
+    strategies_with_funds = {name: data for name, data in strategy_data.items() if data.get('total_value', 0.0) > 0}
 
     aggregated_total = None
     agg_balances, agg_history_df, agg_df_tmp = compute_aggregated_portfolio_history(all_events_df, strategy_data)
@@ -1143,7 +1234,7 @@ else:
     
     with col4:
         if strategies_df is not None and not strategies_df.empty:
-            active_strategies = len(strategies_df)
+            active_strategies = len(strategies_with_funds)
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">Active Strategies</div>
@@ -1172,6 +1263,12 @@ else:
         st.markdown("### 📈 Performance Portfolio e Protocolli")
         
         col1, col2 = st.columns([3, 1])
+        proto_color_seed = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
+        default_colors = [COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], COA_COLORS['light_purple'], COA_COLORS['light_blue']]
+        proto_color_map = {}
+        if agg_df_tmp is not None and not agg_df_tmp.empty:
+            proto_cols_all = [c for c in agg_df_tmp.columns if c not in ['date', 'Total']]
+            proto_color_map = {name: proto_color_seed.get(name, default_colors[i % len(default_colors)]) for i, name in enumerate(proto_cols_all)}
         
         with col1:
             # Main portfolio chart
@@ -1187,8 +1284,6 @@ else:
                     line=dict(color='#ffffff', width=3),
                     marker=dict(size=6, color='#ffffff')
                 ))
-                proto_color_map = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
-                default_colors = [COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], COA_COLORS['light_purple'], COA_COLORS['light_blue']]
                 for i, c in enumerate(proto_cols):
                     col = proto_color_map.get(c, default_colors[i % len(default_colors)])
                     fig_portfolio.add_trace(go.Scatter(
@@ -1254,13 +1349,10 @@ else:
                 proto_cols_pie = [c for c in agg_df_pie.columns if c not in ['date','Total']]
                 alloc_names = proto_cols_pie
                 alloc_values = agg_df_pie[proto_cols_pie].iloc[-1].tolist() if not agg_df_pie.empty else []
-                base_map = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
-                default_colors = [COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], COA_COLORS['light_purple'], COA_COLORS['light_blue']]
-                color_map = {name: base_map.get(name, default_colors[i % len(default_colors)]) for i, name in enumerate(alloc_names)}
                 fig_strategies = go.Figure(data=[go.Pie(
                     labels=alloc_names,
                     values=alloc_values,
-                    marker=dict(colors=[color_map.get(n, COA_COLORS['primary_purple']) for n in alloc_names])
+                    marker=dict(colors=[proto_color_map.get(n, COA_COLORS['primary_purple']) for n in alloc_names])
                 )])
                 fig_strategies.update_layout(
                     title='Allocazione Protocolli',
@@ -1273,24 +1365,24 @@ else:
         
         # Add shared charts like in CHIODI_old.py
         if current_role == 'admin':
-            st.subheader("📈 Individual Share Values (USD) Over Time")
+            st.subheader("📈 Valori delle Quote Individuali (USD) nel Tempo")
             if not total_history.empty and len(total_history.columns) > 2:
                 investor_cols = [c for c in total_history.columns if c not in ['date', 'total']]
                 if investor_cols:
-                    value_df_melted = total_history.melt(id_vars='date', value_vars=investor_cols, var_name='Investor', value_name='USD Value')
-                    fig_investor_value = px.line(value_df_melted, x='date', y='USD Value', color='Investor', markers=True, 
-                                               labels={'USD Value': 'Share Value (USD)', 'date': 'Date'})
+                    value_df_melted = total_history.melt(id_vars='date', value_vars=investor_cols, var_name='Investitore', value_name='Valore (USD)')
+                    fig_investor_value = px.line(value_df_melted, x='date', y='Valore (USD)', color='Investitore', markers=True, 
+                                               labels={'Valore (USD)': 'Valore (USD)', 'date': 'Data'})
                     fig_investor_value.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_investor_value, use_container_width=True)
         else: 
-            st.subheader("📈 Your Value Trend (USD)")
+            st.subheader("📈 Andamento del Tuo Valore (USD)")
             if user_investor_name and user_investor_name in total_history.columns:
                 user_history_df = total_history[['date', user_investor_name]].copy()
-                user_history_df.rename(columns={user_investor_name: 'Your Value (USD)'}, inplace=True)
-                fig_user_value = px.line(user_history_df, x='date', y='Your Value (USD)', markers=True)
+                user_history_df.rename(columns={user_investor_name: 'Il Tuo Valore (USD)'}, inplace=True)
+                fig_user_value = px.line(user_history_df, x='date', y='Il Tuo Valore (USD)', markers=True)
                 st.plotly_chart(fig_user_value, use_container_width=True)
         
-        st.subheader("📊 Investor Shares Evolution (%)")
+        st.subheader("📊 Evoluzione Quote Investitori (%)")
         history_to_show = total_history.copy()
         if current_role != 'admin':
             if user_investor_name and user_investor_name in history_to_show.columns:
@@ -1300,15 +1392,15 @@ else:
             if inv_cols:
                 pct_df = history_to_show[inv_cols].div(history_to_show['total'], axis=0).fillna(0)
                 pct_df['date'] = history_to_show['date']
-                pct_df_melted = pct_df.melt(id_vars='date', var_name='Investor', value_name='Share')
-                fig_shares = px.area(pct_df_melted, x='date', y='Share', color='Investor', markers=True)
+                pct_df_melted = pct_df.melt(id_vars='date', var_name='Investitore', value_name='Quota')
+                fig_shares = px.area(pct_df_melted, x='date', y='Quota', color='Investitore', markers=True)
                 fig_shares.update_yaxes(tickformat='.0%')
                 fig_shares.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_shares, use_container_width=True)
 
     # Investor Details Tab
     with tabs[1]:
-        st.markdown("### 👥 Investor Performance")
+        st.markdown("### 👥 Performance Investitori")
         try:
             st.cache_data.clear()
         except Exception:
@@ -1353,12 +1445,21 @@ else:
                 else:
                     return 'background-color: rgba(160,174,192,0.15); color: var(--text-primary);'
             
-            styled_df = df_inv.style.format({
-                'EUR Invested': '€{:,.2f}',
-                'USD Invested': '${:,.2f}',
-                'Total Withdrawn (USD)': '${:,.2f}',
-                'Current Value (USD)': '${:,.2f}',
-                'Share %': '{:.2f}%',
+            display_df = df_inv.rename(columns={
+                'Investor': 'Investitore',
+                'EUR Invested': 'Investito EUR',
+                'USD Invested': 'Investito USD',
+                'Total Withdrawn (USD)': 'Prelevato Totale (USD)',
+                'Current Value (USD)': 'Valore Attuale (USD)',
+                'Share %': 'Quota %',
+                'ROI %': 'ROI %'
+            })
+            styled_df = display_df.style.format({
+                'Investito EUR': '€{:,.2f}',
+                'Investito USD': '${:,.2f}',
+                'Prelevato Totale (USD)': '${:,.2f}',
+                'Valore Attuale (USD)': '${:,.2f}',
+                'Quota %': '{:.2f}%',
                 'ROI %': '{:+.2f}%'
             }).apply(lambda x: x.map(roi_color), subset=['ROI %'])
             
@@ -1366,10 +1467,10 @@ else:
 
         st.divider()
         if current_role == 'admin':
-            st.subheader('📈 Annual Performance History')
-            options = ['All Investors'] + investors_to_show
-            selected_investor = st.selectbox('Select Investor for Annual View', options)
-            if selected_investor == 'All Investors':
+            st.subheader('📈 Storico Performance Annuale')
+            options = ['Tutti gli investitori'] + investors_to_show
+            selected_investor = st.selectbox('Seleziona investitore per vista annuale', options)
+            if selected_investor == 'Tutti gli investitori':
                 display_multi_investor_annual_chart(investors_to_show, all_events_df, total_history)
                 combined_rows = []
                 for inv in investors_to_show:
@@ -1381,14 +1482,23 @@ else:
                         combined_rows.append(sub)
                 if combined_rows:
                     combined = pd.concat(combined_rows).sort_values(['Investor','Year'])
-                    st.subheader('💰 Annual Investment Flows (All Investors)')
-                    for c in ['Deposits','Withdrawals','Year_End_Value']:
+                    combined = combined.rename(columns={
+                        'Investor': 'Investitore',
+                        'Year': 'Anno',
+                        'Deposits': 'Depositi',
+                        'Withdrawals': 'Prelievi',
+                        'Year_End_Value': 'Valore Fine Anno'
+                    })
+                    st.subheader('💰 Flussi Annuali (Tutti gli investitori)')
+                    for c in ['Depositi','Prelievi','Valore Fine Anno']:
                         combined[c] = pd.to_numeric(combined[c], errors='coerce').fillna(0.0)
                     st.dataframe(
-                        combined.style.format({'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}'}),
+                        combined.style.format({'Depositi': '${:,.0f}', 'Prelievi': '${:,.0f}', 'Valore Fine Anno': '${:,.0f}'}),
                         use_container_width=True,
                         hide_index=True
                     )
+                st.subheader('📆 Guadagni Mensili')
+                st.info("Seleziona un investitore specifico per vedere i guadagni mensili.")
             else:
                 annual_df = calculate_annual_performance(selected_investor, all_events_df, total_history)
                 if annual_df is not None and not annual_df.empty:
@@ -1432,7 +1542,7 @@ else:
                         + pd.to_numeric(annual_df.get('Withdrawals', 0.0), errors='coerce').fillna(0.0)
                     )
                     annual_df['ROI %'] = annual_df.apply(lambda r: (float(r['Net_Gain']) / float(r['Start_of_Year']) * 100) if float(r['Start_of_Year']) > 0 else None, axis=1)
-                    display_annual_chart(annual_df, f"Annual Gains - {selected_investor}")
+                    display_annual_chart(annual_df, f"Guadagni Annuali - {selected_investor}")
                     gains_series = pd.to_numeric(annual_df['Net_Gain'], errors='coerce').fillna(0.0)
                     best_idx = int(gains_series.idxmax())
                     worst_idx = int(gains_series.idxmin())
@@ -1450,7 +1560,7 @@ else:
                     with colm1:
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Miglior Anno</div>
                             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">{best_year}</span>
                                 <span style="display:inline-flex; gap:8px; align-items:center;">
@@ -1463,7 +1573,7 @@ else:
                     with colm2:
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Peggior Anno</div>
                             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">{worst_year}</span>
                                 <span style="display:inline-flex; gap:8px; align-items:center;">
@@ -1482,7 +1592,7 @@ else:
                         avg_roi = float(total_roi_pct / years_count) if years_count > 0 else 0.0
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Avg Annual</div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Media Annua</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">${avg_gain:,.0f}</span>
                                 <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if avg_roi >= 0 else COA_COLORS['primary_purple']}; color:white;">{avg_roi:+.1f}%</span>
@@ -1496,26 +1606,45 @@ else:
                         total_roi = ((final_end_value - total_deposits_all) / total_deposits_all * 100) if total_deposits_all > 0 else 0.0
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Total Gain</div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Guadagno Totale</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">${total_gain:,.0f}</span>
                                 <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if total_roi >= 0 else COA_COLORS['primary_purple']}; color:white;">{total_roi:+.1f}%</span>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
-                    st.subheader('💰 Annual Investment Flows')
+                    st.subheader('💰 Flussi Annuali')
                     flows_df = annual_df[['Year','Deposits','Start_of_Year','Withdrawals','End_Value','ROI %']].copy()
-                    flows_df.rename(columns={'End_Value': 'Year_End_Value'}, inplace=True)
-                    flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
-                    flows_df['Year'] = flows_df['Year'].astype(int)
-                    fmt_cols = ['Start_of_Year','Deposits','Withdrawals','Year_End_Value','ROI %']
+                    flows_df.rename(columns={
+                        'Year': 'Anno',
+                        'Deposits': 'Depositi',
+                        'Start_of_Year': 'Inizio Anno',
+                        'Withdrawals': 'Prelievi',
+                        'End_Value': 'Valore Fine Anno',
+                        'ROI %': 'ROI %'
+                    }, inplace=True)
+                    flows_df = flows_df[['Anno','Depositi','Inizio Anno','Prelievi','Valore Fine Anno','ROI %']]
+                    flows_df['Anno'] = flows_df['Anno'].astype(int)
+                    fmt_cols = ['Inizio Anno','Depositi','Prelievi','Valore Fine Anno','ROI %']
                     for c in fmt_cols:
                         flows_df[c] = pd.to_numeric(flows_df[c], errors='coerce').fillna(0.0)
                     st.dataframe(
-                        flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
+                        flows_df.style.format({'Inizio Anno': '${:,.0f}', 'Depositi': '${:,.0f}', 'Prelievi': '${:,.0f}', 'Valore Fine Anno': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
                         use_container_width=True,
                         hide_index=True
                     )
+                    st.subheader('📆 Guadagni Mensili')
+                    inv_events = all_events_df[all_events_df['investor'] == selected_investor]
+                    year_options = sorted(pd.to_datetime(inv_events['date']).dt.year.dropna().unique().tolist()) if not inv_events.empty else []
+                    if year_options:
+                        selected_year = st.selectbox('Anno', options=year_options, index=len(year_options)-1, key=f"monthly_year_admin_{selected_investor}")
+                        monthly_df = calculate_monthly_performance(selected_investor, selected_year, all_events_df, total_history)
+                        if monthly_df is not None and not monthly_df.empty:
+                            display_monthly_chart(monthly_df, f"Guadagni Mensili - {selected_investor} ({selected_year})")
+                        else:
+                            st.info("Nessun dato mensile disponibile per l'anno selezionato.")
+                    else:
+                        st.info("Nessun dato disponibile per i guadagni mensili.")
         else:
             if user_investor_name:
                 st.subheader('📈 Il Tuo Storico Annuale')
@@ -1579,7 +1708,7 @@ else:
                     with colu1:
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Best Year</div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Miglior Anno</div>
                             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">{best_year_u}</span>
                                 <span style="display:inline-flex; gap:8px; align-items:center;">
@@ -1592,7 +1721,7 @@ else:
                     with colu2:
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Worst Year</div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Peggior Anno</div>
                             <div style="display:flex; align-items:center; justify-content:space-between; margin-top:0.2rem;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">{worst_year_u}</span>
                                 <span style="display:inline-flex; gap:8px; align-items:center;">
@@ -1611,7 +1740,7 @@ else:
                         avg_roi_u = float(total_roi_pct_u / years_count_u) if years_count_u > 0 else 0.0
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Avg Annual</div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Media Annua</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">${avg_gain_u:,.0f}</span>
                                 <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if avg_roi_u >= 0 else COA_COLORS['primary_purple']}; color:white;">{avg_roi_u:+.1f}%</span>
@@ -1625,7 +1754,7 @@ else:
                         total_roi_u = ((final_end_value_u - total_deposits_u2) / total_deposits_u2 * 100) if total_deposits_u2 > 0 else 0.0
                         st.markdown(f"""
                         <div style="background: var(--card-bg); padding: 1rem; border-radius: 8px;">
-                            <div style="font-size:0.85rem; color: var(--text-secondary);">Total Gain</div>
+                            <div style="font-size:0.85rem; color: var(--text-secondary);">Guadagno Totale</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">${total_gain_u:,.0f}</span>
                                 <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if total_roi_u >= 0 else COA_COLORS['primary_purple']}; color:white;">{total_roi_u:+.1f}%</span>
@@ -1634,17 +1763,36 @@ else:
                         """, unsafe_allow_html=True)
                     st.subheader('💰 I Tuoi Flussi Annuali')
                     flows_df = annual_df[['Year','Deposits','Start_of_Year','Withdrawals','End_Value','ROI %']].copy()
-                    flows_df.rename(columns={'End_Value': 'Year_End_Value'}, inplace=True)
-                    flows_df = flows_df[['Year','Deposits','Start_of_Year','Withdrawals','Year_End_Value','ROI %']]
-                    flows_df['Year'] = flows_df['Year'].astype(int)
-                    fmt_cols = ['Start_of_Year','Deposits','Withdrawals','Year_End_Value','ROI %']
+                    flows_df.rename(columns={
+                        'Year': 'Anno',
+                        'Deposits': 'Depositi',
+                        'Start_of_Year': 'Inizio Anno',
+                        'Withdrawals': 'Prelievi',
+                        'End_Value': 'Valore Fine Anno',
+                        'ROI %': 'ROI %'
+                    }, inplace=True)
+                    flows_df = flows_df[['Anno','Depositi','Inizio Anno','Prelievi','Valore Fine Anno','ROI %']]
+                    flows_df['Anno'] = flows_df['Anno'].astype(int)
+                    fmt_cols = ['Inizio Anno','Depositi','Prelievi','Valore Fine Anno','ROI %']
                     for c in fmt_cols:
                         flows_df[c] = pd.to_numeric(flows_df[c], errors='coerce').fillna(0.0)
                     st.dataframe(
-                        flows_df.style.format({'Start_of_Year': '${:,.0f}', 'Deposits': '${:,.0f}', 'Withdrawals': '${:,.0f}', 'Year_End_Value': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
+                        flows_df.style.format({'Inizio Anno': '${:,.0f}', 'Depositi': '${:,.0f}', 'Prelievi': '${:,.0f}', 'Valore Fine Anno': '${:,.0f}', 'ROI %': '{:+.1f}%'}),
                         use_container_width=True,
                         hide_index=True
                     )
+                    st.subheader('📆 Guadagni Mensili')
+                    inv_events_u = all_events_df[all_events_df['investor'] == user_investor_name]
+                    year_options_u = sorted(pd.to_datetime(inv_events_u['date']).dt.year.dropna().unique().tolist()) if not inv_events_u.empty else []
+                    if year_options_u:
+                        selected_year_u = st.selectbox('Anno', options=year_options_u, index=len(year_options_u)-1, key="monthly_year_user")
+                        monthly_df_u = calculate_monthly_performance(user_investor_name, selected_year_u, all_events_df, total_history)
+                        if monthly_df_u is not None and not monthly_df_u.empty:
+                            display_monthly_chart(monthly_df_u, f"Guadagni Mensili - {user_investor_name} ({selected_year_u})")
+                        else:
+                            st.info("Nessun dato mensile disponibile per l'anno selezionato.")
+                    else:
+                        st.info("Nessun dato disponibile per i guadagni mensili.")
 
     # Aggiornamenti Tab
     with tabs[2]:
