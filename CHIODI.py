@@ -528,9 +528,9 @@ def get_active_strategies_df() -> pd.DataFrame:
 def get_protocol_options(strategies_df: pd.DataFrame, include_no: bool = False, include_all: bool = False) -> list:
     options = []
     if include_all:
-        options.append('All Protocols')
+        options.append('Tutti i Protocolli')
     if include_no:
-        options.append('No Protocol')
+        options.append('Nessun Protocollo')
     if strategies_df is not None and not strategies_df.empty:
         options.extend(sorted(strategies_df['name'].tolist()))
     return options
@@ -550,7 +550,18 @@ def replay_events(events_df: pd.DataFrame, strategy_id: int = None):
     if strategy_id is not None:
         events_df = events_df[events_df['strategy_id'] == strategy_id]
     
-    events_df = events_df.sort_values('date').reset_index(drop=True)
+    # Sort events deterministically: Date -> Deposit -> Valuation -> Withdrawal -> ID
+    # This ensures that on the same day, deposits are credited before valuation (participating in gain),
+    # and withdrawals are taken after valuation (realizing gain).
+    type_priority = {'deposit': 0, 'valuation': 1, 'withdrawal': 2}
+    events_df = events_df.copy()
+    events_df['type_rank'] = events_df['type'].map(type_priority).fillna(99)
+    
+    sort_cols = ['date', 'type_rank']
+    if 'id' in events_df.columns:
+        sort_cols.append('id')
+        
+    events_df = events_df.sort_values(by=sort_cols).reset_index(drop=True)
     investor_balances, history_rows, prev_total_value = {}, [], 0.0
     
     for _, row in events_df.iterrows():
@@ -738,6 +749,25 @@ def generate_annual_report(year: int, strategy_id: int = None):
         
         return monthly_df, annual_metrics
 
+def get_aggregated_balance(filtered_events: pd.DataFrame, investor: str) -> float:
+    if filtered_events.empty:
+        return 0.0
+    unique_strategies = filtered_events['strategy_id'].dropna().unique().tolist()
+    if not unique_strategies:
+        bals, _ = replay_events(filtered_events)
+        return float(bals.get(investor, 0.0))
+    
+    total = 0.0
+    global_evs = filtered_events[filtered_events['strategy_id'].isna()]
+    if not global_evs.empty:
+        gb, _ = replay_events(global_evs)
+        total += gb.get(investor, 0.0)
+        
+    for sid in unique_strategies:
+        sb, _ = replay_events(filtered_events, strategy_id=sid)
+        total += sb.get(investor, 0.0)
+    return total
+
 # ---------- Investor Annual Performance ----------
 def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame, portfolio_history_df: pd.DataFrame = None) -> pd.DataFrame:
     if not investor_name or all_events_df is None or all_events_df.empty:
@@ -763,8 +793,7 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
             start_balance = float(before_start[investor_name].iloc[-1]) if not before_start.empty else 0.0
         else:
             events_upto_start = all_events_df[all_events_df['date'] < start_date]
-            start_balances, _ = replay_events(events_upto_start)
-            start_balance = float(start_balances.get(investor_name, 0.0))
+            start_balance = get_aggregated_balance(events_upto_start, investor_name)
         year_events = all_events_df[(all_events_df['date'] >= start_date) & (all_events_df['date'] <= end_date)]
         deposits = year_events[(year_events['investor'] == investor_name) & (year_events['type'] == 'deposit')]['usd_amount'].sum()
         withdrawals = year_events[(year_events['investor'] == investor_name) & (year_events['type'] == 'withdrawal')]['usd_amount'].sum()
@@ -775,8 +804,7 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
             end_balance = float(upto_end[investor_name].iloc[-1]) if not upto_end.empty else start_balance
         else:
             events_upto_end = all_events_df[all_events_df['date'] <= end_date]
-            end_balances, _ = replay_events(events_upto_end)
-            end_balance = float(end_balances.get(investor_name, 0.0))
+            end_balance = get_aggregated_balance(events_upto_end, investor_name)
         start_of_year = float(start_balance) + float(deposits or 0.0)
         net_gain = end_balance - start_balance - float(deposits or 0.0) + float(withdrawals or 0.0)
         roi_pct = (net_gain / float(start_of_year) * 100) if float(start_of_year) > 0 else None
@@ -823,15 +851,15 @@ def calculate_monthly_performance(investor_name: str, year: int, all_events_df: 
             start_balance = float(before_start[investor_name].iloc[-1]) if not before_start.empty else 0.0
         else:
             events_upto_start = events_df[events_df['date'] < start_date]
-            start_balances, _ = replay_events(events_upto_start)
-            start_balance = float(start_balances.get(investor_name, 0.0))
+            start_balance = get_aggregated_balance(events_upto_start, investor_name)
+            
         if ph is not None:
             upto_end = ph[ph['date'] <= end_date]
             end_balance = float(upto_end[investor_name].iloc[-1]) if not upto_end.empty else start_balance
         else:
             events_upto_end = events_df[events_df['date'] <= end_date]
-            end_balances, _ = replay_events(events_upto_end)
-            end_balance = float(end_balances.get(investor_name, 0.0))
+            end_balance = get_aggregated_balance(events_upto_end, investor_name)
+            
         month_events = events_df[(events_df['date'] >= start_date) & (events_df['date'] <= end_date) & (events_df['investor'] == investor_name)]
         deposits = month_events[month_events['type'] == 'deposit']['usd_amount'].sum()
         withdrawals = month_events[month_events['type'] == 'withdrawal']['usd_amount'].sum()
@@ -1899,7 +1927,7 @@ else:
                 note_text = st.text_area('Note', placeholder='Inserisci le note...')
                 if st.form_submit_button('Salva Nota', use_container_width=True):
                     with get_db_session() as db:
-                        strategy_id = resolve_strategy_id_by_name(strategies_df, selected_proto) if selected_proto != 'No Protocol' else None
+                        strategy_id = resolve_strategy_id_by_name(strategies_df, selected_proto) if selected_proto != 'Nessun Protocollo' else None
                         db.add(UpdateNote(year=int(a_year), month=int(a_month), strategy_id=strategy_id, note=note_text.strip(), created_by=current_user, created_at=datetime.date.today()))
                     st.success("Nota salvata")
                     time.sleep(1)
@@ -1922,9 +1950,9 @@ else:
                                 e_year = st.number_input('Anno', min_value=2000, max_value=2100, value=int(n_row.year), step=1)
                                 month_map = {1:'Gennaio',2:'Febbraio',3:'Marzo',4:'Aprile',5:'Maggio',6:'Giugno',7:'Luglio',8:'Agosto',9:'Settembre',10:'Ottobre',11:'Novembre',12:'Dicembre'}
                                 e_month = st.selectbox('Mese', options=list(range(1,13)), index=max(0, int(n_row.month)-1), format_func=lambda m: month_map[m])
-                                current_protocol = 'No Protocol'
+                                current_protocol = 'Nessun Protocollo'
                                 if n_row.strategy_id and strategy_mapping:
-                                    current_protocol = strategy_mapping.get(int(n_row.strategy_id), 'No Protocol')
+                                    current_protocol = strategy_mapping.get(int(n_row.strategy_id), 'Nessun Protocollo')
                                 proto_options = get_protocol_options(strategies_df, include_no=True)
                                 e_protocol = st.selectbox('Protocollo', options=proto_options, index=proto_options.index(current_protocol) if current_protocol in proto_options else 0)
                                 e_note = st.text_area('Note', value=n_row.note or '')
@@ -1933,7 +1961,7 @@ else:
                                     if st.form_submit_button('💾 Aggiorna', use_container_width=True):
                                         n_row.year = int(e_year)
                                         n_row.month = int(e_month)
-                                        if e_protocol != 'No Protocol':
+                                        if e_protocol != 'Nessun Protocollo':
                                             n_row.strategy_id = resolve_strategy_id_by_name(strategies_df, e_protocol)
                                         else:
                                             n_row.strategy_id = None
@@ -1976,7 +2004,7 @@ else:
                             usd_amount = d_eur * rate
                             
                             with get_db_session() as db:
-                                strategy_id = resolve_strategy_id_by_name(strategies_df, d_protocol) if d_protocol != 'No Protocol' else None
+                                strategy_id = resolve_strategy_id_by_name(strategies_df, d_protocol) if d_protocol != 'Nessun Protocollo' else None
                                 
                                 db.add(Event(
                                     date=d_date, 
@@ -2006,7 +2034,7 @@ else:
                             eur_amount = w_usd / rate
                             
                             with get_db_session() as db:
-                                strategy_id = resolve_strategy_id_by_name(strategies_df, w_protocol) if w_protocol != 'No Protocol' else None
+                                strategy_id = resolve_strategy_id_by_name(strategies_df, w_protocol) if w_protocol != 'Nessun Protocollo' else None
                                 
                                 db.add(Event(
                                     date=w_date, 
@@ -2032,7 +2060,7 @@ else:
                         
                         if st.form_submit_button('📈 Aggiungi Valutazione', use_container_width=True):
                             with get_db_session() as db:
-                                strategy_id = resolve_strategy_id_by_name(strategies_df, v_protocol) if v_protocol != 'All Protocols' else None
+                                strategy_id = resolve_strategy_id_by_name(strategies_df, v_protocol) if v_protocol != 'Tutti i Protocolli' else None
                                 
                                 db.add(Event(
                                     date=v_date, 
@@ -2054,7 +2082,7 @@ else:
                     if not events_to_edit.empty:
                         # Add strategy names
                         strategy_mapping = strategies_df[['id', 'name']].set_index('id')['name'].to_dict()
-                        events_to_edit['protocol_name'] = events_to_edit['strategy_id'].map(strategy_mapping).fillna('No Protocol')
+                        events_to_edit['protocol_name'] = events_to_edit['strategy_id'].map(strategy_mapping).fillna('Nessun Protocollo')
                         
                         st.dataframe(
                             events_to_edit[['id', 'date', 'type', 'protocol_name', 'investor', 'eur_amount', 'usd_amount', 'valuation_total_usd']].sort_values('date', ascending=False), 
@@ -2076,7 +2104,7 @@ else:
                                     if ev_row.type in ['deposit', 'withdrawal']:
                                         e_investor = st.text_input('Nome Investitore', value=ev_row.investor or "")
                                         
-                                        current_protocol = 'No Protocol'
+                                        current_protocol = 'Nessun Protocollo'
                                         if ev_row.strategy_id and not strategies_df.empty:
                                             match = strategies_df[strategies_df['id'] == ev_row.strategy_id]
                                             if not match.empty:
@@ -2101,7 +2129,7 @@ else:
                                             if ev_row.type in ['deposit', 'withdrawal']:
                                                 ev_row.investor = e_investor.strip() or None
                                                 
-                                                if e_protocol != 'No Protocol':
+                                                if e_protocol != 'Nessun Protocollo':
                                                     ev_row.strategy_id = resolve_strategy_id_by_name(strategies_df, e_protocol)
                                                 else:
                                                     ev_row.strategy_id = None
