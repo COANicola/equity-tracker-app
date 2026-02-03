@@ -742,10 +742,11 @@ def generate_annual_report(year: int, strategy_id: int = None):
 def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame, portfolio_history_df: pd.DataFrame = None) -> pd.DataFrame:
     if not investor_name or all_events_df is None or all_events_df.empty:
         return pd.DataFrame()
-    inv_deposits = all_events_df[(all_events_df['investor'] == investor_name) & (all_events_df['type'] == 'deposit')]
-    if inv_deposits.empty:
+    # Check all events for the investor to determine start year, not just deposits
+    inv_events = all_events_df[all_events_df['investor'] == investor_name]
+    if inv_events.empty:
         return pd.DataFrame()
-    first_year = pd.to_datetime(inv_deposits['date']).dt.year.min()
+    first_year = pd.to_datetime(inv_events['date']).dt.year.min()
     current_year = datetime.date.today().year
     records = []
     for year in range(int(first_year), int(current_year) + 1):
@@ -753,6 +754,8 @@ def calculate_annual_performance(investor_name: str, all_events_df: pd.DataFrame
         end_date = datetime.date(year, 12, 31)
         if end_date > datetime.date.today():
             end_date = datetime.date.today()
+        # For annual performance, we can try to use portfolio history for speed, but fallback is safer
+        # Logic remains similar but we ensure first_year is correct
         if portfolio_history_df is not None and not portfolio_history_df.empty and investor_name in portfolio_history_df.columns:
             ph = portfolio_history_df.copy()
             ph['date'] = pd.to_datetime(ph['date']).dt.date
@@ -800,10 +803,13 @@ def calculate_monthly_performance(investor_name: str, year: int, all_events_df: 
     events_df = all_events_df.copy()
     events_df['date'] = pd.to_datetime(events_df['date']).dt.date
     month_names = {1:'Gennaio',2:'Febbraio',3:'Marzo',4:'Aprile',5:'Maggio',6:'Giugno',7:'Luglio',8:'Agosto',9:'Settembre',10:'Ottobre',11:'Novembre',12:'Dicembre'}
+    
+    # Use portfolio_history if available to capture market value changes (unrealized gains)
     ph = None
     if portfolio_history_df is not None and not portfolio_history_df.empty and investor_name in portfolio_history_df.columns:
         ph = portfolio_history_df.copy()
         ph['date'] = pd.to_datetime(ph['date']).dt.date
+    
     records = []
     for month in range(1, 13):
         start_date = datetime.date(year, month, 1)
@@ -994,12 +1000,12 @@ if not st.session_state.jwt:
         """, unsafe_allow_html=True)
         
         with st.form("login_form"):
-            login_user = st.text_input('Username', placeholder='Enter your username')
-            login_pw = st.text_input('Password', type='password', placeholder='Enter your password')
+            login_user = st.text_input('Nome Utente', placeholder='Inserisci il tuo nome utente')
+            login_pw = st.text_input('Password', type='password', placeholder='Inserisci la tua password')
             
             col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
             with col_btn2:
-                if st.form_submit_button('Login', use_container_width=True):
+                if st.form_submit_button('Accedi', use_container_width=True):
                     with get_db_session() as db:
                         lu = (login_user or "").strip()
                         lp = (login_pw or "").strip()
@@ -1027,9 +1033,9 @@ if not st.session_state.jwt:
 # Verify JWT
 payload = decode_jwt(st.session_state.jwt)
 if not payload:
-    st.error('⏰ Session invalid or expired. Please re-login.')
+    st.error('⏰ Sessione non valida o scaduta. Effettua nuovamente il login.')
     st.session_state.clear()
-    if st.button('🔙 Back to Login'): st.rerun()
+    if st.button('🔙 Torna al Login'): st.rerun()
     st.stop()
 
 current_user, current_role = st.session_state.username, st.session_state.role
@@ -1101,29 +1107,29 @@ with get_db_session() as db:
 
 # ---------- Main Dashboard ----------
 if all_events_df.empty:
-    st.info('📊 No events in the system yet. Start by adding your first deposit!')
+    st.info('📊 Nessun evento nel sistema. Inizia aggiungendo il tuo primo deposito!')
     
     if current_role == 'admin':
         with st.form("first_deposit_form"):
-            st.subheader("➕ Add First Event")
+            st.subheader("➕ Aggiungi Primo Evento")
             col1, col2 = st.columns(2)
             
             with col1:
-                d_date = st.date_input('Date', datetime.date.today())
-                investor = st.text_input('Investor Name', placeholder='Enter investor name')
+                d_date = st.date_input('Data', datetime.date.today())
+                investor = st.text_input('Nome Investitore', placeholder='Inserisci nome investitore')
                 
             with col2:
-                protocol_options = ['No Protocol'] + (sorted(strategies_df['name'].tolist()) if not strategies_df.empty else [])
-                selected_protocol = st.selectbox('Protocol', protocol_options)
+                protocol_options = ['Nessun Protocollo'] + (sorted(strategies_df['name'].tolist()) if not strategies_df.empty else [])
+                selected_protocol = st.selectbox('Protocollo', protocol_options)
                 
-            eur_amount = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, value=1000.0)
+            eur_amount = st.number_input('Importo (EUR)', min_value=0.01, step=100.0, value=1000.0)
             
-            if st.form_submit_button('💰 Add First Deposit', use_container_width=True):
+            if st.form_submit_button('💰 Aggiungi Primo Deposito', use_container_width=True):
                 rate = get_historical_eurusd(d_date)
                 usd_amount = eur_amount * rate
                 
                 with get_db_session() as db:
-                    strategy_id = resolve_strategy_id_by_name(strategies_df, selected_protocol) if selected_protocol != 'No Protocol' else None
+                    strategy_id = resolve_strategy_id_by_name(strategies_df, selected_protocol) if selected_protocol != 'Nessun Protocollo' else None
                     
                     db.add(Event(
                         date=d_date, 
@@ -1135,7 +1141,7 @@ if all_events_df.empty:
                         eurusd_rate=rate
                     ))
                 
-                st.success('🎉 First deposit added successfully!')
+                st.success('🎉 Primo deposito aggiunto con successo!')
                 time.sleep(2)
                 st.rerun()
     else:
@@ -1198,7 +1204,7 @@ else:
     with col1:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Total Portfolio Value</div>
+            <div class="metric-label">Valore Totale Portafoglio</div>
             <div class="metric-value">${total_portfolio_value:,.2f}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1206,7 +1212,7 @@ else:
     with col2:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Overall ROI</div>
+            <div class="metric-label">ROI Complessivo</div>
             <div class="metric-value" style="color: {COA_COLORS['primary_blue'] if overall_roi >= 0 else COA_COLORS['primary_purple']}">
                 {overall_roi:+.2f}%
             </div>
@@ -1219,7 +1225,7 @@ else:
             user_share = (user_balance / total_portfolio_value * 100) if total_portfolio_value > 0 else 0
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">Your Share</div>
+                <div class="metric-label">La Tua Quota</div>
                 <div class="metric-value">{user_share:.2f}%</div>
             </div>
             """, unsafe_allow_html=True)
@@ -1227,7 +1233,7 @@ else:
             visible_investors = sorted({inv for inv in events_df['investor'].dropna().unique()})
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">Active Investors</div>
+                <div class="metric-label">Investitori Attivi</div>
                 <div class="metric-value">{len(visible_investors)}</div>
             </div>
             """, unsafe_allow_html=True)
@@ -1237,24 +1243,24 @@ else:
             active_strategies = len(strategies_with_funds)
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">Active Strategies</div>
+                <div class="metric-label">Strategie Attive</div>
                 <div class="metric-value">{active_strategies}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">Strategies</div>
-                <div class="metric-value">None</div>
+                <div class="metric-label">Strategie</div>
+                <div class="metric-value">Nessuna</div>
             </div>
             """, unsafe_allow_html=True)
 
     st.divider()
 
     # ---------- Navigation Tabs ----------
-    tab_list = ["📈 Dashboard", "👥 Investor Details", "📝 Aggiornamenti"]
+    tab_list = ["📈 Dashboard", "👥 Dettagli Investitore", "📝 Aggiornamenti"]
     if current_role == 'admin':
-        tab_list.extend(["⚙️ Event Management"])
+        tab_list.extend(["⚙️ Gestione Eventi"])
     
     tabs = st.tabs(tab_list)
 
@@ -1264,12 +1270,39 @@ else:
         
         col1, col2 = st.columns([3, 1])
         proto_color_seed = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
-        default_colors = [COA_COLORS['primary_purple'], COA_COLORS['primary_blue'], COA_COLORS['light_purple'], COA_COLORS['light_blue']]
+        
+        # Define a pool of colors, excluding those already used in the seed to prevent duplicates
+        base_pool = [
+            COA_COLORS['primary_purple'], 
+            COA_COLORS['primary_blue'], 
+            COA_COLORS['light_purple'], 
+            COA_COLORS['light_blue'],
+            '#00C853', '#FFAB00', '#D500F9', '#2962FF', '#FF3D00', '#00E5FF', '#76FF03',
+            '#C2185B', '#7B1FA2', '#512DA8', '#303F9F', '#1976D2', '#0288D1', '#0097A7',
+            '#00796B', '#388E3C', '#689F38', '#AFB42B', '#FBC02D', '#FFA000', '#F57C00',
+            '#E64A19', '#5D4037', '#616161', '#455A64'
+        ]
+        used_seed_colors = set(proto_color_seed.values())
+        available_colors = [c for c in base_pool if c not in used_seed_colors]
+        
         proto_color_map = {}
         if agg_df_tmp is not None and not agg_df_tmp.empty:
             proto_cols_all = [c for c in agg_df_tmp.columns if c not in ['date', 'Total']]
-            proto_color_map = {name: proto_color_seed.get(name, default_colors[i % len(default_colors)]) for i, name in enumerate(proto_cols_all)}
-        
+            
+            # First pass: assign seed colors
+            for c in proto_cols_all:
+                if c in proto_color_seed:
+                    proto_color_map[c] = proto_color_seed[c]
+            
+            # Second pass: assign remaining colors
+            for c in proto_cols_all:
+                if c not in proto_color_map:
+                    if available_colors:
+                        proto_color_map[c] = available_colors.pop(0)
+                    else:
+                        # Fallback if we run out of colors (unlikely with expanded pool)
+                        proto_color_map[c] = COA_COLORS['text_secondary']
+
         with col1:
             # Main portfolio chart
             if agg_df_tmp is not None and not agg_df_tmp.empty:
@@ -1285,7 +1318,7 @@ else:
                     marker=dict(size=6, color='#ffffff')
                 ))
                 for i, c in enumerate(proto_cols):
-                    col = proto_color_map.get(c, default_colors[i % len(default_colors)])
+                    col = proto_color_map.get(c, COA_COLORS['primary_purple'])
                     fig_portfolio.add_trace(go.Scatter(
                         x=agg_df['date'],
                         y=agg_df[c],
@@ -1340,7 +1373,7 @@ else:
                 fig_portfolio.update_yaxes(gridcolor='rgba(226,232,240,0.15)', zerolinecolor='rgba(226,232,240,0.25)')
                 st.plotly_chart(fig_portfolio, use_container_width=True)
             else:
-                st.info("No historical data available yet")
+                st.info("Nessun dato storico ancora disponibile")
         
         with col2:
             # Strategy performance comparison
@@ -1635,7 +1668,16 @@ else:
                     )
                     st.subheader('📆 Guadagni Mensili')
                     inv_events = all_events_df[all_events_df['investor'] == selected_investor]
-                    year_options = sorted(pd.to_datetime(inv_events['date']).dt.year.dropna().unique().tolist()) if not inv_events.empty else []
+                    min_year = datetime.date.today().year
+                    if not inv_events.empty:
+                        min_year = int(pd.to_datetime(inv_events['date']).dt.year.min())
+                    
+                    curr_year = datetime.date.today().year
+                    # Ensure current year is always included and range is valid
+                    start_y = min(min_year, curr_year)
+                    year_options = list(range(start_y, curr_year + 1))
+
+                    
                     if year_options:
                         selected_year = st.selectbox('Anno', options=year_options, index=len(year_options)-1, key=f"monthly_year_admin_{selected_investor}")
                         monthly_df = calculate_monthly_performance(selected_investor, selected_year, all_events_df, total_history)
@@ -1783,7 +1825,15 @@ else:
                     )
                     st.subheader('📆 Guadagni Mensili')
                     inv_events_u = all_events_df[all_events_df['investor'] == user_investor_name]
-                    year_options_u = sorted(pd.to_datetime(inv_events_u['date']).dt.year.dropna().unique().tolist()) if not inv_events_u.empty else []
+                    min_year_u = datetime.date.today().year
+                    if not inv_events_u.empty:
+                        min_year_u = int(pd.to_datetime(inv_events_u['date']).dt.year.min())
+                    
+                    curr_year_u = datetime.date.today().year
+                    # Ensure current year is always included and range is valid
+                    start_y_u = min(min_year_u, curr_year_u)
+                    year_options_u = list(range(start_y_u, curr_year_u + 1))
+
                     if year_options_u:
                         selected_year_u = st.selectbox('Anno', options=year_options_u, index=len(year_options_u)-1, key="monthly_year_user")
                         monthly_df_u = calculate_monthly_performance(user_investor_name, selected_year_u, all_events_df, total_history)
@@ -1903,25 +1953,25 @@ else:
     # Event Management Tab (Admin Only)
     if current_role == 'admin':
         with tabs[-1] if len(tabs) > 0 else st.container():
-            st.markdown("### ⚙️ Event Management")
+            st.markdown("### ⚙️ Gestione Eventi")
             
             form_cols = st.columns(2)
             
             with form_cols[0]:
-                st.subheader("➕ Add Event")
+                st.subheader("➕ Aggiungi Evento")
                 
-                tab_dep, tab_wd, tab_val = st.tabs(["💰 Deposit", "💸 Withdrawal", "📈 Valuation"])
+                tab_dep, tab_wd, tab_val = st.tabs(["💰 Deposito", "💸 Prelievo", "📈 Valutazione"])
                 
                 with tab_dep:
                     with st.form("deposit_form"):
-                        d_date = st.date_input('Date', datetime.date.today(), key='d_date')
-                        d_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='d_inv')
+                        d_date = st.date_input('Data', datetime.date.today(), key='d_date')
+                        d_investor = st.text_input('Nome Investitore', placeholder='Inserisci nome investitore', key='d_inv')
                         
-                        d_protocol = st.selectbox('Protocol', get_protocol_options(strategies_df, include_no=True), key='d_protocol')
+                        d_protocol = st.selectbox('Protocollo', get_protocol_options(strategies_df, include_no=True), key='d_protocol')
                         
-                        d_eur = st.number_input('Amount (EUR)', min_value=0.01, step=100.0, key='d_eur')
+                        d_eur = st.number_input('Importo (EUR)', min_value=0.01, step=100.0, key='d_eur')
                         
-                        if st.form_submit_button('💰 Add Deposit', use_container_width=True):
+                        if st.form_submit_button('💰 Aggiungi Deposito', use_container_width=True):
                             rate = get_historical_eurusd(d_date)
                             usd_amount = d_eur * rate
                             
@@ -1938,20 +1988,20 @@ else:
                                     eurusd_rate=rate
                                 ))
                             
-                            st.success('Deposit added successfully!')
+                            st.success('Deposito aggiunto con successo!')
                             time.sleep(1)
                             st.rerun()
                 
                 with tab_wd:
                     with st.form("withdrawal_form"):
-                        w_date = st.date_input('Date', datetime.date.today(), key='w_date')
-                        w_investor = st.text_input('Investor Name', placeholder='Enter investor name', key='w_inv')
+                        w_date = st.date_input('Data', datetime.date.today(), key='w_date')
+                        w_investor = st.text_input('Nome Investitore', placeholder='Inserisci nome investitore', key='w_inv')
                         
-                        w_protocol = st.selectbox('Protocol', get_protocol_options(strategies_df, include_no=True), key='w_protocol')
+                        w_protocol = st.selectbox('Protocollo', get_protocol_options(strategies_df, include_no=True), key='w_protocol')
                         
-                        w_usd = st.number_input('Amount (USD)', min_value=0.01, step=100.0, key='w_usd')
+                        w_usd = st.number_input('Importo (USD)', min_value=0.01, step=100.0, key='w_usd')
                         
-                        if st.form_submit_button('💸 Add Withdrawal', use_container_width=True):
+                        if st.form_submit_button('💸 Aggiungi Prelievo', use_container_width=True):
                             rate = get_historical_eurusd(w_date)
                             eur_amount = w_usd / rate
                             
@@ -1968,19 +2018,19 @@ else:
                                     eurusd_rate=rate
                                 ))
                             
-                            st.success('Withdrawal added successfully!')
+                            st.success('Prelievo aggiunto con successo!')
                             time.sleep(1)
                             st.rerun()
                 
                 with tab_val:
                     with st.form("valuation_form"):
-                        v_date = st.date_input('Date', datetime.date.today(), key='v_date')
+                        v_date = st.date_input('Data', datetime.date.today(), key='v_date')
                         
-                        v_protocol = st.selectbox('Protocol', get_protocol_options(strategies_df, include_all=True), key='v_protocol')
+                        v_protocol = st.selectbox('Protocollo', get_protocol_options(strategies_df, include_all=True), key='v_protocol')
                         
-                        v_total = st.number_input('Total Portfolio Value (USD)', min_value=0.01, step=1000.0, key='v_usd')
+                        v_total = st.number_input('Valore Totale Portafoglio (USD)', min_value=0.01, step=1000.0, key='v_usd')
                         
-                        if st.form_submit_button('📈 Add Valuation', use_container_width=True):
+                        if st.form_submit_button('📈 Aggiungi Valutazione', use_container_width=True):
                             with get_db_session() as db:
                                 strategy_id = resolve_strategy_id_by_name(strategies_df, v_protocol) if v_protocol != 'All Protocols' else None
                                 
@@ -1991,12 +2041,12 @@ else:
                                     valuation_total_usd=v_total
                                 ))
                             
-                            st.success('Valuation added successfully!')
+                            st.success('Valutazione aggiunta con successo!')
                             time.sleep(1)
                             st.rerun()
             
             with form_cols[1]:
-                st.subheader("✏️ Edit/Delete Events")
+                st.subheader("✏️ Modifica/Elimina Eventi")
                 
                 with get_db_session() as db:
                     events_to_edit = pd.read_sql(db.query(Event).statement, db.bind)
@@ -2013,18 +2063,18 @@ else:
                             hide_index=True
                         )
                         
-                        ev_id_to_edit = st.selectbox('Select Event ID to edit', options=sorted(events_to_edit['id'].tolist(), reverse=True))
+                        ev_id_to_edit = st.selectbox('Seleziona ID Evento da modificare', options=sorted(events_to_edit['id'].tolist(), reverse=True))
                         
                         if ev_id_to_edit:
                             ev_row = db.get(Event, ev_id_to_edit)
                             if ev_row:
                                 with st.form(f"edit_form_{ev_row.id}"):
-                                    st.markdown(f"**Edit Event #{ev_row.id} ({ev_row.type})**")
+                                    st.markdown(f"**Modifica Evento #{ev_row.id} ({ev_row.type})**")
                                     
-                                    e_date = st.date_input('Date', value=ev_row.date)
+                                    e_date = st.date_input('Data', value=ev_row.date)
                                     
                                     if ev_row.type in ['deposit', 'withdrawal']:
-                                        e_investor = st.text_input('Investor Name', value=ev_row.investor or "")
+                                        e_investor = st.text_input('Nome Investitore', value=ev_row.investor or "")
                                         
                                         current_protocol = 'No Protocol'
                                         if ev_row.strategy_id and not strategies_df.empty:
@@ -2032,19 +2082,19 @@ else:
                                             if not match.empty:
                                                 current_protocol = match['name'].iloc[0]
                                         protocol_options = get_protocol_options(strategies_df, include_no=True)
-                                        e_protocol = st.selectbox('Protocol', protocol_options, index=protocol_options.index(current_protocol))
+                                        e_protocol = st.selectbox('Protocollo', protocol_options, index=protocol_options.index(current_protocol))
                                     
                                     if ev_row.type == 'deposit':
-                                        e_eur = st.number_input('Amount (EUR)', value=ev_row.eur_amount or 0.0)
+                                        e_eur = st.number_input('Importo (EUR)', value=ev_row.eur_amount or 0.0)
                                     elif ev_row.type == 'withdrawal':
-                                        e_usd = st.number_input('Amount (USD)', value=ev_row.usd_amount or 0.0)
+                                        e_usd = st.number_input('Importo (USD)', value=ev_row.usd_amount or 0.0)
                                     else:  # valuation
-                                        e_val = st.number_input('Total Value (USD)', value=ev_row.valuation_total_usd or 0.0)
+                                        e_val = st.number_input('Valore Totale (USD)', value=ev_row.valuation_total_usd or 0.0)
                                     
                                     col_btn1, col_btn2 = st.columns(2)
                                     
                                     with col_btn1:
-                                        if st.form_submit_button('💾 Update', use_container_width=True):
+                                        if st.form_submit_button('💾 Aggiorna', use_container_width=True):
                                             ev_row.date = e_date
                                             rate = get_historical_eurusd(e_date)
                                             
@@ -2068,40 +2118,40 @@ else:
                                                 ev_row.valuation_total_usd = e_val
                                             
                                             db.commit()
-                                            st.success(f"Event #{ev_row.id} updated!")
+                                            st.success(f"Evento #{ev_row.id} aggiornato!")
                                             time.sleep(1)
                                             st.rerun()
                                     
                                     with col_btn2:
-                                        if st.form_submit_button('🗑️ Delete', type="primary", use_container_width=True):
+                                        if st.form_submit_button('🗑️ Elimina', type="primary", use_container_width=True):
                                             db.delete(ev_row)
                                             db.commit()
-                                            st.success(f"Event #{ev_row.id} deleted!")
+                                            st.success(f"Evento #{ev_row.id} eliminato!")
                                             time.sleep(1)
                                             st.rerun()
                     else:
-                        st.info("No events to edit")
+                        st.info("Nessun evento da modificare")
 
 # ---------- Admin Panel ----------
 if current_role == 'admin':
-    st.markdown("### 👑 Admin Panel:")
-    with st.expander('User Management'):
+    st.markdown("### 👑 Pannello Amministratore:")
+    with st.expander('Gestione Utenti'):
         admin_cols = st.columns(2)
         
         with admin_cols[0]:
-            st.subheader('➕ Create New User')
+            st.subheader('➕ Crea Nuovo Utente')
             with st.form("create_user_form"):
-                new_username = st.text_input('Username', placeholder='Enter username')
-                new_password = st.text_input('Password', type='password', placeholder='Enter password')
-                new_role = st.selectbox('Role', ['user', 'admin'])
-                new_investor_name = st.text_input('Investor Name (optional)', placeholder='Link to investor')
+                new_username = st.text_input('Nome Utente', placeholder='Inserisci nome utente')
+                new_password = st.text_input('Password', type='password', placeholder='Inserisci password')
+                new_role = st.selectbox('Ruolo', ['user', 'admin'])
+                new_investor_name = st.text_input('Nome Investitore (opzionale)', placeholder='Collega a un investitore')
                 
-                if st.form_submit_button('Create User', use_container_width=True):
+                if st.form_submit_button('Crea Utente', use_container_width=True):
                     if new_username and new_password:
                         try:
                             with get_db_session() as db:
                                 if db.query(User).filter(User.username == new_username).first():
-                                    st.error('Username already exists')
+                                    st.error('Nome utente già esistente')
                                 else:
                                     db.add(User(
                                         username=new_username.strip(), 
@@ -2110,22 +2160,22 @@ if current_role == 'admin':
                                         investor_name=new_investor_name.strip() or None
                                     ))
                                     db.commit()  # Commit the transaction
-                                    st.success(f'User "{new_username}" created successfully!')
+                                    st.success(f'Utente "{new_username}" creato con successo!')
                                     time.sleep(1)
                                     st.rerun()
                         except Exception as e:
-                            st.error(f"Database error: {e}")
+                            st.error(f"Errore Database: {e}")
                     else:
-                        st.warning('Username and password are required')
+                        st.warning('Nome utente e password sono richiesti')
         
         with admin_cols[1]:
-            st.subheader('✏️ Edit/Delete User')
+            st.subheader('✏️ Modifica/Elimina Utente')
             with get_db_session() as db:
                 all_users = db.query(User).all()
                 
                 if all_users:
                     user_options = [f"{user.username} ({user.role})" for user in all_users]
-                    selected_user = st.selectbox("Select user", options=user_options)
+                    selected_user = st.selectbox("Seleziona utente", options=user_options)
                     
                     if selected_user:
                         username = selected_user.split(' (')[0]
@@ -2135,43 +2185,43 @@ if current_role == 'admin':
                             with st.form("edit_user_form"):
                                 is_admin_user = (user_to_edit.username == 'admin')
                                 
-                                st.markdown(f"**Managing User: {user_to_edit.username}**")
+                                st.markdown(f"**Gestione Utente: {user_to_edit.username}**")
                                 
                                 edited_username = st.text_input(
-                                    "Username", 
+                                    "Nome Utente", 
                                     value=user_to_edit.username, 
                                     disabled=is_admin_user
                                 )
                                 
                                 edited_role = st.selectbox(
-                                    "Role", 
+                                    "Ruolo", 
                                     ['user', 'admin'], 
                                     index=1 if user_to_edit.role == 'admin' else 0, 
                                     disabled=is_admin_user
                                 )
                                 
                                 edited_inv_name = st.text_input(
-                                    "Investor Name", 
+                                    "Nome Investitore", 
                                     value=user_to_edit.investor_name or "",
                                     disabled=is_admin_user
                                 )
                                 
                                 new_password = st.text_input(
-                                    "New Password (leave blank to keep current)", 
+                                    "Nuova Password (lascia vuoto per mantenere corrente)", 
                                     type="password"
                                 )
                                 
                                 col_btn1, col_btn2 = st.columns(2)
                                 
                                 with col_btn1:
-                                    if st.form_submit_button("💾 Update User", use_container_width=True):
+                                    if st.form_submit_button("💾 Aggiorna Utente", use_container_width=True):
                                         if not is_admin_user:
                                             user_to_edit.investor_name = edited_inv_name.strip() or None
                                             
                                             if edited_username != user_to_edit.username:
                                                 existing = db.query(User).filter(User.username == edited_username).first()
                                                 if existing:
-                                                    st.error("Username already in use")
+                                                    st.error("Nome utente già in uso")
                                                 else:
                                                     user_to_edit.username = edited_username
                                             
@@ -2181,61 +2231,61 @@ if current_role == 'admin':
                                             user_to_edit.password_hash = hash_password(new_password)
                                         
                                         db.commit()
-                                        st.success(f"User '{user_to_edit.username}' updated!")
+                                        st.success(f"Utente '{user_to_edit.username}' aggiornato!")
                                         time.sleep(1)
                                         st.rerun()
                                 
                                 with col_btn2:
                                     if not is_admin_user and st.form_submit_button(
-                                        "🗑️ DELETE USER", 
+                                        "🗑️ ELIMINA UTENTE", 
                                         type="primary", 
                                         use_container_width=True
                                     ):
                                         db.delete(user_to_edit)
                                         db.commit()
-                                        st.warning(f"User '{user_to_edit.username}' deleted!")
+                                        st.warning(f"Utente '{user_to_edit.username}' eliminato!")
                                         time.sleep(1)
                                         st.rerun()
                 else:
-                    st.info("No users to edit")
+                    st.info("Nessun utente da modificare")
         
         st.divider()
-        st.subheader('👥 Current Users')
+        st.subheader('👥 Utenti Correnti')
         with get_db_session() as db:
             users_df = pd.read_sql(db.query(User).statement, db.bind)
             if not users_df.empty:
                 display_df = users_df[['id', 'username', 'role', 'investor_name']].copy()
                 st.dataframe(display_df, use_container_width=True, hide_index=True)
             else:
-                st.info("No users found")
+                st.info("Nessun utente trovato")
 
-    with st.expander('Protocol Management'):
+    with st.expander('Gestione Protocolli'):
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader('➕ Add New Protocol')
+            st.subheader('➕ Aggiungi Nuovo Protocollo')
             with st.form("add_protocol_form"):
-                protocol_name = st.text_input('Protocol Name', placeholder='e.g., Growth Protocol')
-                protocol_desc = st.text_area('Description', placeholder='Describe the protocol...')
+                protocol_name = st.text_input('Nome Protocollo', placeholder='es., Growth Protocol')
+                protocol_desc = st.text_area('Descrizione', placeholder='Descrivi il protocollo...')
                 
-                if st.form_submit_button('Add Protocol', use_container_width=True):
+                if st.form_submit_button('Aggiungi Protocollo', use_container_width=True):
                     if protocol_name:
                         with get_db_session() as db:
                             existing = db.query(Strategy).filter(Strategy.name == protocol_name).first()
                             if existing:
-                                st.error('Protocol name already exists')
+                                st.error('Nome protocollo già esistente')
                             else:
                                 new_protocol = Strategy(name=protocol_name, description=protocol_desc)
                                 db.add(new_protocol)
                                 db.commit()
-                                st.success(f'Protocol "{protocol_name}" added successfully!')
+                                st.success(f'Protocollo "{protocol_name}" aggiunto con successo!')
                                 time.sleep(1)
                                 st.rerun()
                     else:
-                        st.error('Protocol name is required')
+                        st.error('Il nome del protocollo è richiesto')
         
         with col2:
-            st.subheader('📋 Active Protocols')
+            st.subheader('📋 Protocolli Attivi')
             with get_db_session() as db:
                 active_protocols = db.query(Strategy).filter(Strategy.is_active == True).all()
                 if active_protocols:
@@ -2247,41 +2297,41 @@ if current_role == 'admin':
                                 if protocol.description:
                                     st.caption(protocol.description)
                             with col_b:
-                                if st.button('✏️', key=f'rename_protocol_{protocol.id}', help='Rename Protocol'):
+                                if st.button('✏️', key=f'rename_protocol_{protocol.id}', help='Rinomina Protocollo'):
                                     st.session_state[f'renaming_protocol_{protocol.id}'] = True
                                     st.session_state[f'rename_name_{protocol.id}'] = protocol.name
                                     st.session_state[f'rename_desc_{protocol.id}'] = protocol.description or ''
                             with col_c:
-                                if st.button('🗑️', key=f'del_protocol_{protocol.id}', help='Delete Protocol'):
+                                if st.button('🗑️', key=f'del_protocol_{protocol.id}', help='Elimina Protocollo'):
                                     protocol_obj = db.get(Strategy, protocol.id)
                                     protocol_obj.is_active = False
                                     db.commit()
-                                    st.success('Protocol deactivated')
+                                    st.success('Protocollo disattivato')
                                     time.sleep(1)
                                     st.rerun()
                             
                             if st.session_state.get(f'renaming_protocol_{protocol.id}', False):
                                 with st.form(f'rename_form_{protocol.id}'):
-                                    new_name = st.text_input('New Name', 
+                                    new_name = st.text_input('Nuovo Nome', 
                                                              value=st.session_state[f'rename_name_{protocol.id}'],
                                                              key=f'rename_name_input_{protocol.id}')
-                                    new_desc = st.text_area('New Description (optional)', 
+                                    new_desc = st.text_area('Nuova Descrizione (opzionale)', 
                                                             value=st.session_state[f'rename_desc_{protocol.id}'],
                                                             key=f'rename_desc_input_{protocol.id}')
                                     
                                     col_rename1, col_rename2 = st.columns(2)
                                     with col_rename1:
-                                        if st.form_submit_button('💾 Save', use_container_width=True):
+                                        if st.form_submit_button('💾 Salva', use_container_width=True):
                                             if new_name and new_name != protocol.name:
                                                 existing = db.query(Strategy).filter(Strategy.name == new_name).first()
                                                 if existing:
-                                                    st.error('Protocol name already exists')
+                                                    st.error('Nome protocollo già esistente')
                                                 else:
                                                     protocol_obj = db.get(Strategy, protocol.id)
                                                     protocol_obj.name = new_name
                                                     protocol_obj.description = new_desc
                                                     db.commit()
-                                                    st.success(f'Protocol renamed to "{new_name}"')
+                                                    st.success(f'Protocollo rinominato in "{new_name}"')
                                                     st.session_state[f'renaming_protocol_{protocol.id}'] = False
                                                     time.sleep(1)
                                                     st.rerun()
@@ -2289,26 +2339,26 @@ if current_role == 'admin':
                                                 protocol_obj = db.get(Strategy, protocol.id)
                                                 protocol_obj.description = new_desc
                                                 db.commit()
-                                                st.success('Protocol description updated')
+                                                st.success('Descrizione protocollo aggiornata')
                                                 st.session_state[f'renaming_protocol_{protocol.id}'] = False
                                                 time.sleep(1)
                                                 st.rerun()
                                     with col_rename2:
-                                        if st.form_submit_button('❌ Cancel', use_container_width=True):
+                                        if st.form_submit_button('❌ Annulla', use_container_width=True):
                                             st.session_state[f'renaming_protocol_{protocol.id}'] = False
                                             st.rerun()
                 else:
-                    st.info('No protocols defined yet')
+                    st.info('Nessun protocollo ancora definito')
 
-    with st.expander('Data Management'):
+    with st.expander('Gestione Dati'):
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader('📤 Export Data')
-            if st.button('Export All Events to CSV', use_container_width=True):
+            st.subheader('📤 Esporta Dati')
+            if st.button('Esporta tutti gli eventi in CSV', use_container_width=True):
                 csv_data = export_events_to_csv()
                 st.download_button(
-                    label="⬇️ Download CSV",
+                    label="⬇️ Scarica CSV",
                     data=csv_data,
                     file_name=f"coa_events_export_{datetime.date.today().strftime('%Y%m%d')}.csv",
                     mime="text/csv",
@@ -2316,8 +2366,8 @@ if current_role == 'admin':
                 )
         
         with col2:
-            st.subheader('📥 Import Data')
-            uploaded_file = st.file_uploader("Choose a CSV file", type="csv")
+            st.subheader('📥 Importa Dati')
+            uploaded_file = st.file_uploader("Scegli un file CSV", type="csv")
             if uploaded_file is not None:
                 csv_content = uploaded_file.getvalue().decode('utf-8')
                 success, message = import_events_from_csv(csv_content)
