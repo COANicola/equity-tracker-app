@@ -1,5 +1,5 @@
 """
-COA Equity Tracker - Versione 3.0
+Equity Tracker - Versione 3.0
 Enhanced version with multi-strategy support, annual reports, and improved styling
 """
 
@@ -40,8 +40,8 @@ except Exception:
 JWT_ALGO = 'HS256'
 JWT_EXP_SECONDS = 60 * 60 * 8  # 8 hours
 
-# COA Brand Colors based on logo
-COA_COLORS = {
+# Equity Tracker Brand Colors based on logo
+APP_COLORS = {
     'primary_purple': '#7A2E8F',
     'primary_blue': '#1E8CC8', 
     'light_gray': '#CFCFCF',
@@ -58,7 +58,7 @@ COA_COLORS = {
     'error': '#E53E3E'
 }
 
-def load_coa_logo(path: str = "COA_no sfondo_no scritta.png"):
+def load_app_logo(path: str = "equity_tracker_logo.png"):
     try:
         img = Image.open(path)
         if img.mode in ("RGBA", "LA"):
@@ -71,9 +71,9 @@ def load_coa_logo(path: str = "COA_no sfondo_no scritta.png"):
         logger.info(f"Logo load failed: {e}")
         return None
 
-def render_logo_centered(path: str = "COA_no sfondo_no scritta.png", width_px: int = 100):
+def render_logo_centered(path: str = "equity_tracker_logo.png", width_px: int = 100):
     try:
-        img = load_coa_logo(path)
+        img = load_app_logo(path)
         if img is not None:
             buf = io.BytesIO()
             img.save(buf, format="PNG")
@@ -92,9 +92,9 @@ def render_logo_centered(path: str = "COA_no sfondo_no scritta.png", width_px: i
         except Exception:
             logger.info(f"Logo render failed: {e}")
 
-def get_logo_img_tag(path: str = "COA_no sfondo_no scritta.png", width_px: int = 140) -> str:
+def get_logo_img_tag(path: str = "equity_tracker_logo.png", width_px: int = 140) -> str:
     try:
-        img = load_coa_logo(path)
+        img = load_app_logo(path)
         if img is not None:
             buf = io.BytesIO()
             img.save(buf, format="PNG")
@@ -108,8 +108,8 @@ def get_logo_img_tag(path: str = "COA_no sfondo_no scritta.png", width_px: int =
         logger.info(f"Logo tag failed: {e}")
         return ""
 
-# ---------- Custom CSS for COA Branding ----------
-def apply_coa_styling():
+# ---------- Custom CSS for Equity Tracker Branding ----------
+def apply_app_styling():
     # Use session state theme preference
     if hasattr(st.session_state, 'theme'):
         is_dark = st.session_state.theme == 'dark'
@@ -128,18 +128,18 @@ def apply_coa_styling():
         text_primary = "#e2e8f0"
         text_secondary = "#a0aec0"
     else:
-        bg_color = COA_COLORS['background']
-        card_bg = COA_COLORS['card_bg']
-        text_primary = COA_COLORS['text_primary']
-        text_secondary = COA_COLORS['text_secondary']
+        bg_color = APP_COLORS['background']
+        card_bg = APP_COLORS['card_bg']
+        text_primary = APP_COLORS['text_primary']
+        text_secondary = APP_COLORS['text_secondary']
     
     st.markdown(f"""
     <style>
     /* Main theme colors - Dynamic based on detected theme */
     :root {{
-        --primary-purple: {COA_COLORS['primary_purple']};
-        --primary-blue: {COA_COLORS['primary_blue']};
-        --light-gray: {COA_COLORS['light_gray']};
+        --primary-purple: {APP_COLORS['primary_purple']};
+        --primary-blue: {APP_COLORS['primary_blue']};
+        --light-gray: {APP_COLORS['light_gray']};
         --background: {bg_color};
         --card-bg: {card_bg};
         --text-primary: {text_primary};
@@ -884,7 +884,7 @@ def display_annual_chart(annual_df: pd.DataFrame, title: str):
     years = [str(int(y)) for y in annual_df['Year'].tolist()]
     gains = [float(g) if pd.notna(g) else 0.0 for g in annual_df['Net_Gain'].tolist()]
     rois = [float(r) if pd.notna(r) else 0.0 for r in annual_df['ROI %'].tolist()] if 'ROI %' in annual_df.columns else [0.0 for _ in gains]
-    colors = [COA_COLORS['primary_blue'] if (g or 0) >= 0 else COA_COLORS['primary_purple'] for g in gains]
+    colors = [APP_COLORS['primary_blue'] if (g or 0) >= 0 else APP_COLORS['primary_purple'] for g in gains]
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=years,
@@ -920,7 +920,7 @@ def display_monthly_chart(monthly_df: pd.DataFrame, title: str):
     months = monthly_df['Mese'].tolist()
     gains = [float(g) if pd.notna(g) else 0.0 for g in monthly_df['Guadagno Netto'].tolist()]
     rois = [float(r) if pd.notna(r) else 0.0 for r in monthly_df['ROI %'].tolist()] if 'ROI %' in monthly_df.columns else [0.0 for _ in gains]
-    colors = [COA_COLORS['primary_blue'] if (g or 0) >= 0 else COA_COLORS['primary_purple'] for g in gains]
+    colors = [APP_COLORS['primary_blue'] if (g or 0) >= 0 else APP_COLORS['primary_purple'] for g in gains]
     fig = go.Figure()
     fig.add_trace(go.Bar(
         x=months,
@@ -978,7 +978,7 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
     for inv, df in per_inv.items():
         gains_map = {int(r['Year']): (float(r['Net_Gain']) if pd.notna(r['Net_Gain']) else 0.0) for _, r in df.iterrows()}
         gains = [gains_map.get(y, 0.0) for y in years_sorted]
-        fig.add_trace(go.Bar(x=years_sorted_str, y=gains, name=inv, marker_color=inv_colors.get(inv, COA_COLORS['primary_blue']), text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
+        fig.add_trace(go.Bar(x=years_sorted_str, y=gains, name=inv, marker_color=inv_colors.get(inv, APP_COLORS['primary_blue']), text=[f"${g:,.0f}" for g in gains], textposition='outside', cliponaxis=False))
     fig.update_layout(
         barmode='group',
         title='Guadagni Annuali - Tutti gli investitori',
@@ -997,12 +997,12 @@ def display_multi_investor_annual_chart(investors: list, all_events_df: pd.DataF
     st.plotly_chart(fig, use_container_width=True)
 
 # ---------- Main App ----------
-st.set_page_config(page_title='COA Equity Tracker', page_icon='📊', layout='wide')
+st.set_page_config(page_title='Equity Tracker', page_icon='📊', layout='wide')
 
 if 'theme' not in st.session_state:
     st.session_state.theme = 'dark'
 
-apply_coa_styling()
+apply_app_styling()
 
 # Initialize session state
 if 'jwt' not in st.session_state:
@@ -1016,14 +1016,14 @@ with get_db_session() as db:
         st.info('Default admin user created. Login with admin / admin123')
 
 if not st.session_state.jwt:
-    # Login page with COA branding
+    # Login page with Equity Tracker branding
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         _img_tag = get_logo_img_tag(width_px=140)
         st.markdown(f"""
         <div style="display:flex; flex-direction:column; align-items:center;">
             {_img_tag}
-            <h2 style="margin-top: 0.6rem; margin-bottom: 1.6rem;">COA-Portfolio</h2>
+            <h2 style="margin-top: 0.6rem; margin-bottom: 1.6rem;">Equity Tracker</h2>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1052,7 +1052,7 @@ if not st.session_state.jwt:
         # Professional footer
         st.markdown("""
         <div style="text-align: center; margin-top: 2rem; opacity: 0.7;">
-            <p style="font-size: 0.9rem;">Gestione e analisi del portafoglio COA</p>
+            <p style="font-size: 0.9rem;">Gestione e analisi del portafoglio</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -1081,9 +1081,9 @@ with col1:
             logger.info(f"Logo display failed: {e}")
             # Fallback to text logo
             st.markdown(f"""
-            <div style="background: linear-gradient(135deg, {COA_COLORS['primary_purple']}, {COA_COLORS['primary_blue']});
+            <div style="background: linear-gradient(135deg, {APP_COLORS['primary_purple']}, {APP_COLORS['primary_blue']});
                         color: white; padding: 1rem; border-radius: 12px; text-align: center;">
-                <h2 style="margin: 0; font-weight: 700;">COA</h2>
+                <h2 style="margin: 0; font-weight: 700;">Equity Tracker</h2>
             </div>
             """, unsafe_allow_html=True)
 
@@ -1092,8 +1092,8 @@ with col2:
     <div class="main-header">
         <div class="header-content">
             <div class="title-container">
-                <h1>COA-Portfolio</h1>
-                <p>Gestione e analisi del portafoglio COA</p>
+                <h1>Equity Tracker</h1>
+                <p>Gestione e analisi del portafoglio</p>
             </div>
         </div>
     </div>
@@ -1102,13 +1102,13 @@ with col2:
 with col3:
     st.markdown(f"""
     <div style="background: transparent; padding: 1rem; border-radius: 12px; box-shadow: none; text-align: center;">
-        <div style="color: {COA_COLORS['primary_purple']}; font-weight: 600; margin-bottom: 0.5rem;">
+        <div style="color: {APP_COLORS['primary_purple']}; font-weight: 600; margin-bottom: 0.5rem;">
             👤 {current_user}
         </div>
-        <div style="color: {COA_COLORS['text_secondary']}; font-size: 0.9rem; margin-bottom: 1rem;">
+        <div style="color: {APP_COLORS['text_secondary']}; font-size: 0.9rem; margin-bottom: 1rem;">
             {current_role.title()}
         </div>
-        {f'<div style="color: {COA_COLORS["success"]}; font-size: 0.8rem;">✓ Active</div>' if payload else ''}
+        {f'<div style="color: {APP_COLORS["success"]}; font-size: 0.8rem;">✓ Active</div>' if payload else ''}
     </div>
     """, unsafe_allow_html=True)
     if st.button('Esci', use_container_width=True, key='logout_btn'):
@@ -1241,7 +1241,7 @@ else:
         st.markdown(f"""
         <div class="metric-card">
             <div class="metric-label">ROI Complessivo</div>
-            <div class="metric-value" style="color: {COA_COLORS['primary_blue'] if overall_roi >= 0 else COA_COLORS['primary_purple']}">
+            <div class="metric-value" style="color: {APP_COLORS['primary_blue'] if overall_roi >= 0 else APP_COLORS['primary_purple']}">
                 {overall_roi:+.2f}%
             </div>
         </div>
@@ -1297,14 +1297,14 @@ else:
         st.markdown("### 📈 Performance Portfolio e Protocolli")
         
         col1, col2 = st.columns([3, 1])
-        proto_color_seed = {'TS Futures': COA_COLORS['primary_blue'], 'Seasonal Stock': COA_COLORS['light_purple']}
+        proto_color_seed = {'TS Futures': APP_COLORS['primary_blue'], 'Seasonal Stock': APP_COLORS['light_purple']}
         
         # Define a pool of colors, excluding those already used in the seed to prevent duplicates
         base_pool = [
-            COA_COLORS['primary_purple'], 
-            COA_COLORS['primary_blue'], 
-            COA_COLORS['light_purple'], 
-            COA_COLORS['light_blue'],
+            APP_COLORS['primary_purple'], 
+            APP_COLORS['primary_blue'], 
+            APP_COLORS['light_purple'], 
+            APP_COLORS['light_blue'],
             '#00C853', '#FFAB00', '#D500F9', '#2962FF', '#FF3D00', '#00E5FF', '#76FF03',
             '#C2185B', '#7B1FA2', '#512DA8', '#303F9F', '#1976D2', '#0288D1', '#0097A7',
             '#00796B', '#388E3C', '#689F38', '#AFB42B', '#FBC02D', '#FFA000', '#F57C00',
@@ -1329,7 +1329,7 @@ else:
                         proto_color_map[c] = available_colors.pop(0)
                     else:
                         # Fallback if we run out of colors (unlikely with expanded pool)
-                        proto_color_map[c] = COA_COLORS['text_secondary']
+                        proto_color_map[c] = APP_COLORS['text_secondary']
 
         with col1:
             # Main portfolio chart
@@ -1346,7 +1346,7 @@ else:
                     marker=dict(size=6, color='#ffffff')
                 ))
                 for i, c in enumerate(proto_cols):
-                    col = proto_color_map.get(c, COA_COLORS['primary_purple'])
+                    col = proto_color_map.get(c, APP_COLORS['primary_purple'])
                     fig_portfolio.add_trace(go.Scatter(
                         x=agg_df['date'],
                         y=agg_df[c],
@@ -1380,10 +1380,10 @@ else:
                     render_mode='svg'
                 )
                 fig_portfolio.update_traces(
-                    line_color=COA_COLORS['primary_purple'],
+                    line_color=APP_COLORS['primary_purple'],
                     line_width=3,
                     marker_size=6,
-                    marker_color=COA_COLORS['primary_blue']
+                    marker_color=APP_COLORS['primary_blue']
                 )
                 fig_portfolio.for_each_trace(lambda t: t.update(name='Portfolio'))
                 fig_portfolio.update_layout(
@@ -1391,7 +1391,7 @@ else:
                     paper_bgcolor='#1a1a1a',
                     font=dict(color='#e2e8f0'),
                     title_font_size=16,
-                    title_font_color=COA_COLORS['primary_purple'],
+                    title_font_color=APP_COLORS['primary_purple'],
                     height=560,
                     hovermode='x unified',
                     xaxis=dict(showgrid=True, showline=True, showticklabels=True, zeroline=False),
@@ -1413,7 +1413,7 @@ else:
                 fig_strategies = go.Figure(data=[go.Pie(
                     labels=alloc_names,
                     values=alloc_values,
-                    marker=dict(colors=[proto_color_map.get(n, COA_COLORS['primary_purple']) for n in alloc_names])
+                    marker=dict(colors=[proto_color_map.get(n, APP_COLORS['primary_purple']) for n in alloc_names])
                 )])
                 fig_strategies.update_layout(
                     title='Allocazione Protocolli',
@@ -1615,8 +1615,8 @@ else:
                     worst_gain = float(gains_series.iloc[worst_idx])
                     worst_roi_val = annual_df.loc[worst_idx, 'ROI %'] if 'ROI %' in annual_df.columns else None
                     worst_roi = float(worst_roi_val) if (worst_roi_val is not None and pd.notna(worst_roi_val)) else 0.0
-                    best_color = COA_COLORS['primary_blue'] if best_gain >= 0 else COA_COLORS['primary_purple']
-                    worst_color = COA_COLORS['primary_blue'] if worst_gain >= 0 else COA_COLORS['primary_purple']
+                    best_color = APP_COLORS['primary_blue'] if best_gain >= 0 else APP_COLORS['primary_purple']
+                    worst_color = APP_COLORS['primary_blue'] if worst_gain >= 0 else APP_COLORS['primary_purple']
                     colm1, colm2, colm3, colm4 = st.columns(4)
                     with colm1:
                         st.markdown(f"""
@@ -1656,7 +1656,7 @@ else:
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Media Annua</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">${avg_gain:,.0f}</span>
-                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if avg_roi >= 0 else COA_COLORS['primary_purple']}; color:white;">{avg_roi:+.1f}%</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{APP_COLORS['primary_blue'] if avg_roi >= 0 else APP_COLORS['primary_purple']}; color:white;">{avg_roi:+.1f}%</span>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -1670,7 +1670,7 @@ else:
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Guadagno Totale</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">${total_gain:,.0f}</span>
-                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if total_roi >= 0 else COA_COLORS['primary_purple']}; color:white;">{total_roi:+.1f}%</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{APP_COLORS['primary_blue'] if total_roi >= 0 else APP_COLORS['primary_purple']}; color:white;">{total_roi:+.1f}%</span>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -1772,8 +1772,8 @@ else:
                     worst_gain_u = float(gains_series_u.iloc[worst_idx_u])
                     worst_roi_val_u = annual_df.loc[worst_idx_u, 'ROI %'] if 'ROI %' in annual_df.columns else None
                     worst_roi_u = float(worst_roi_val_u) if (worst_roi_val_u is not None and pd.notna(worst_roi_val_u)) else 0.0
-                    best_color_u = COA_COLORS['primary_blue'] if best_gain_u >= 0 else COA_COLORS['primary_purple']
-                    worst_color_u = COA_COLORS['primary_blue'] if worst_gain_u >= 0 else COA_COLORS['primary_purple']
+                    best_color_u = APP_COLORS['primary_blue'] if best_gain_u >= 0 else APP_COLORS['primary_purple']
+                    worst_color_u = APP_COLORS['primary_blue'] if worst_gain_u >= 0 else APP_COLORS['primary_purple']
                     colu1, colu2, colu3, colu4 = st.columns(4)
                     with colu1:
                         st.markdown(f"""
@@ -1813,7 +1813,7 @@ else:
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Media Annua</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">${avg_gain_u:,.0f}</span>
-                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if avg_roi_u >= 0 else COA_COLORS['primary_purple']}; color:white;">{avg_roi_u:+.1f}%</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{APP_COLORS['primary_blue'] if avg_roi_u >= 0 else APP_COLORS['primary_purple']}; color:white;">{avg_roi_u:+.1f}%</span>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -1827,7 +1827,7 @@ else:
                             <div style="font-size:0.85rem; color: var(--text-secondary);">Guadagno Totale</div>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <span style="font-size:1.6rem; color: var(--text-primary);">${total_gain_u:,.0f}</span>
-                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{COA_COLORS['primary_blue'] if total_roi_u >= 0 else COA_COLORS['primary_purple']}; color:white;">{total_roi_u:+.1f}%</span>
+                                <span style="padding:0.25rem 0.6rem; border-radius:12px; background:{APP_COLORS['primary_blue'] if total_roi_u >= 0 else APP_COLORS['primary_purple']}; color:white;">{total_roi_u:+.1f}%</span>
                             </div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -2388,7 +2388,7 @@ if current_role == 'admin':
                 st.download_button(
                     label="⬇️ Scarica CSV",
                     data=csv_data,
-                    file_name=f"coa_events_export_{datetime.date.today().strftime('%Y%m%d')}.csv",
+                    file_name=f"equity_tracker_events_export_{datetime.date.today().strftime('%Y%m%d')}.csv",
                     mime="text/csv",
                     use_container_width=True
                 )
